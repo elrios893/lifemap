@@ -1,0 +1,128 @@
+# LifeMap — Mongo + Spark + Dask + API Flask + Jenkins (+ ngrok opcional). Kafka se agrega en la Entrega 2.
+# Levantar: docker compose up -d --build     (copiar antes .env.example a .env)
+# Sin bind mounts de código: todo se hornea en las imágenes, así Jenkins (que corre en un contenedor)
+# puede desplegar con el socket de Docker sin problemas de rutas.
+name: lifemap
+
+x-dask: &dask
+  image: lifemap-ingest:latest
+  restart: unless-stopped
+
+services:
+  mongo:
+    image: mongo:7.0
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
+    command: ["mongod", "--wiredTigerCacheSizeGB", "2"]
+    volumes: [mongo_data:/data/db]
+    mem_limit: 3g
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  # ---------- Dask: scheduler + 2 workers ----------
+  dask-scheduler:
+    <<: *dask
+    build: ./ingest
+    command: ["dask", "scheduler", "--port", "8786", "--dashboard-address", ":8787"]
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('localhost', 8786), 3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  dask-worker-1: &dask-worker
+    <<: *dask
+    command: ["dask", "worker", "tcp://dask-scheduler:8786", "--nthreads", "2", "--memory-limit", "2GB", "--name", "worker-1"]
+    depends_on:
+      dask-scheduler: {condition: service_healthy}
+    volumes: [data:/data]
+    mem_limit: 2500m
+
+  dask-worker-2:
+    <<: *dask-worker
+    command: ["dask", "worker", "tcp://dask-scheduler:8786", "--nthreads", "2", "--memory-limit", "2GB", "--name", "worker-2"]
+
+  # ---------- Spark: master + worker (imagen propia con los jobs y el conector de Mongo) ----------
+  spark-master:
+    build: ./spark
+    image: lifemap-spark:latest
+    restart: unless-stopped
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master", "--host", "spark-master"]
+    mem_limit: 768m
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/8080"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  spark-worker:
+    image: lifemap-spark:latest
+    restart: unless-stopped
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077"]
+    environment:
+      SPARK_WORKER_CORES: "2"
+      SPARK_WORKER_MEMORY: "3g"
+    depends_on:
+      spark-master: {condition: service_healthy}
+    volumes: [data:/data]
+    mem_limit: 3500m
+
+  # ---------- API Flask ----------
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+      target: runtime
+    image: lifemap-api:latest
+    restart: unless-stopped
+    environment:
+      MONGO_URI: mongodb://${MONGO_USER}:${MONGO_PASSWORD}@mongo:27017/?authSource=admin
+      MONGO_DB: ${MONGO_DB:-lifemap}
+      SPARK_MASTER_UI: http://spark-master:8080
+      DASK_SCHEDULER_UI: http://dask-scheduler:8787
+      GIT_COMMIT: ${GIT_COMMIT:-unknown}
+    depends_on:
+      mongo: {condition: service_healthy}
+    ports: ["80:5000"]
+    mem_limit: 384m
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # ---------- Jenkins (CI/CD) ----------
+  jenkins:
+    build: ./jenkins
+    image: lifemap-jenkins:latest
+    restart: unless-stopped
+    user: root   # socket de Docker del host
+    ports: ["8088:8080", "50000:50000"]
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+    mem_limit: 1g
+
+  # ---------- ngrok: URL fija para la API (perfil "tunnel": COMPOSE_PROFILES=tunnel en .env) ----------
+  ngrok:
+    image: ngrok/ngrok:latest
+    profiles: ["tunnel"]
+    restart: unless-stopped
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:-}
+    command: ["http", "--url=${NGROK_DOMAIN:-}", "api:5000"]
+    depends_on:
+      api: {condition: service_healthy}
+
+volumes:
+  mongo_data:
+  jenkins_home:
+  data:

@@ -1,0 +1,12 @@
+.env
+*.tfstate
+*.tfstate.*
+.terraform/
+terraform.tfvars
+*.pem
+kaggle.json
+__pycache__/
+.pytest_cache/
+data/
+models/*
+!models/.gitkeep

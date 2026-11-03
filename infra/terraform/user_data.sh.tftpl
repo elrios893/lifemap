@@ -1,0 +1,26 @@
+#!/bin/bash
+# cloud-init: instala Docker, clona el repo y levanta el sistema. Log: /var/log/lifemap-init.log
+exec > >(tee -a /var/log/lifemap-init.log) 2>&1
+set -euxo pipefail
+
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get install -y ca-certificates curl git
+curl -fsSL https://get.docker.com | sh
+usermod -aG docker ubuntu
+
+git clone --branch ${repo_branch} ${repo_url} /opt/lifemap
+cd /opt/lifemap
+
+cat > .env <<'EOF'
+MONGO_USER=${mongo_user}
+MONGO_PASSWORD=${mongo_password}
+MONGO_DB=lifemap
+NGROK_AUTHTOKEN=${ngrok_token}
+NGROK_DOMAIN=${ngrok_domain}
+COMPOSE_PROFILES=${ngrok_token != "" ? "tunnel" : ""}
+EOF
+chmod 600 .env
+
+GIT_COMMIT=$(git rev-parse HEAD) docker compose up -d --build
+echo "lifemap listo"

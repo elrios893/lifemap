@@ -1,0 +1,6 @@
+# Copiar a terraform.tfvars (no se versiona)
+admin_cidr     = "0.0.0.0/32"   # tu IP: https://checkip.amazonaws.com
+repo_url       = "https://github.com/elrios893/lifemap.git"
+mongo_password = "cambia-esta-clave"
+# ngrok_authtoken = ""
+# ngrok_domain    = "algo.ngrok-free.app"
