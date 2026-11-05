@@ -28,4 +28,8 @@ EOF
 chmod 600 .env
 
 GIT_COMMIT=$(git rev-parse HEAD) docker compose up -d --build
+
+# Si hay respaldo en S3 (Mongo + modelos) se restaura solo; si no, queda el sistema vacío y se corre scripts/run_pipeline.sh.
+export PATH=$PATH:/snap/bin
+bash scripts/restore_from_s3.sh || echo "restauración falló: correr scripts/run_pipeline.sh"
 echo "lifemap listo"
