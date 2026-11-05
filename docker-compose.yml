@@ -55,7 +55,8 @@ services:
     image: lifemap-spark:latest
     restart: unless-stopped
     command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master", "--host", "spark-master"]
-    mem_limit: 768m
+    volumes: [data:/data, models:/models]
+    mem_limit: 1500m
     healthcheck:
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/8080"]
       interval: 10s
@@ -71,7 +72,7 @@ services:
       SPARK_WORKER_MEMORY: "3g"
     depends_on:
       spark-master: {condition: service_healthy}
-    volumes: [data:/data]
+    volumes: [data:/data, models:/models]
     mem_limit: 3500m
 
   # ---------- API Flask ----------
@@ -90,14 +91,15 @@ services:
       GIT_COMMIT: ${GIT_COMMIT:-unknown}
     depends_on:
       mongo: {condition: service_healthy}
+    volumes: ["models:/models:ro"]
     ports: ["80:5000"]
-    mem_limit: 384m
+    mem_limit: 1300m
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health', timeout=3)"]
       interval: 10s
       timeout: 5s
       retries: 10
-      start_period: 10s
+      start_period: 20s
 
   # ---------- Jenkins (CI/CD) ----------
   jenkins:
@@ -126,3 +128,4 @@ volumes:
   mongo_data:
   jenkins_home:
   data:
+  models:

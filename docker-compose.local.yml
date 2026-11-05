@@ -1,0 +1,26 @@
+# Ajustes para desarrollo local (Docker Desktop con ~8 GB). Uso:
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+# Jenkins queda fuera (perfil "ci"): solo se necesita en el servidor.
+services:
+  mongo:
+    command: ["mongod", "--wiredTigerCacheSizeGB", "0.5"]
+    mem_limit: 1g
+  dask-scheduler:
+    mem_limit: 384m
+  dask-worker-1:
+    command: ["dask", "worker", "tcp://dask-scheduler:8786", "--nthreads", "2", "--memory-limit", "900MB", "--name", "worker-1"]
+    mem_limit: 1g
+  dask-worker-2:
+    command: ["dask", "worker", "tcp://dask-scheduler:8786", "--nthreads", "2", "--memory-limit", "900MB", "--name", "worker-2"]
+    mem_limit: 1g
+  spark-master:
+    mem_limit: 1200m
+  spark-worker:
+    environment:
+      SPARK_WORKER_CORES: "2"
+      SPARK_WORKER_MEMORY: "1500m"
+    mem_limit: 2g
+  api:
+    ports: ["5000:5000"]
+  jenkins:
+    profiles: ["ci"]

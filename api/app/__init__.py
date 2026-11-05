@@ -4,6 +4,8 @@ import requests
 from flask import Flask, jsonify
 from pymongo import MongoClient
 
+from .validation import ApiError
+
 
 def _probe(fn):
     try:
@@ -17,6 +19,15 @@ def create_app(mongo_client=None):
     app = Flask(__name__)
     client = mongo_client or MongoClient(os.environ["MONGO_URI"], serverSelectionTimeoutMS=3000)
     app.config["DB"] = client[os.environ.get("MONGO_DB", "lifemap")]
+
+    from .routes_geo import bp as geo_bp
+    app.register_blueprint(geo_bp)
+    from .routes_predict import bp as predict_bp
+    app.register_blueprint(predict_bp)
+
+    @app.errorhandler(ApiError)
+    def bad_request(e):
+        return jsonify(error=e.message), e.status
 
     def http_ok(url):
         requests.get(url, timeout=3).raise_for_status()

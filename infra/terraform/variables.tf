@@ -58,3 +58,18 @@ variable "ngrok_domain" {
   type    = string
   default = ""
 }
+
+variable "vpc_name" {
+  type    = string
+  default = "vpc-iue-vpc"
+}
+
+variable "subnet_name" {
+  type    = string
+  default = "vpc-iue-subnet-public1-us-east-1a"
+}
+
+variable "s3_bucket" {
+  type    = string
+  default = "iue-bucket-ecs-893"
+}

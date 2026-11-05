@@ -8,6 +8,7 @@ apt-get update
 apt-get install -y ca-certificates curl git
 curl -fsSL https://get.docker.com | sh
 usermod -aG docker ubuntu
+snap install aws-cli --classic
 
 git clone --branch ${repo_branch} ${repo_url} /opt/lifemap
 cd /opt/lifemap
@@ -18,6 +19,8 @@ MONGO_PASSWORD=${mongo_password}
 MONGO_DB=lifemap
 NGROK_AUTHTOKEN=${ngrok_token}
 NGROK_DOMAIN=${ngrok_domain}
+S3_BUCKET=${s3_bucket}
+S3_PREFIX=lifemap
 COMPOSE_PROFILES=${ngrok_token != "" ? "tunnel" : ""}
 EOF
 chmod 600 .env
