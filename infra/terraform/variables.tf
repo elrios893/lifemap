@@ -73,3 +73,8 @@ variable "s3_bucket" {
   type    = string
   default = "iue-bucket-ecs-893"
 }
+
+variable "jenkins_admin_password" {
+  type      = string
+  sensitive = true
+}

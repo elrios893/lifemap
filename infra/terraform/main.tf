@@ -126,6 +126,7 @@ resource "aws_instance" "lifemap" {
     ngrok_token    = var.ngrok_authtoken
     ngrok_domain   = var.ngrok_domain
     s3_bucket      = var.s3_bucket
+    jenkins_pw     = var.jenkins_admin_password
   })
   user_data_replace_on_change = true
 

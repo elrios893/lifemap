@@ -21,6 +21,8 @@ NGROK_AUTHTOKEN=${ngrok_token}
 NGROK_DOMAIN=${ngrok_domain}
 S3_BUCKET=${s3_bucket}
 S3_PREFIX=lifemap
+JENKINS_ADMIN_PASSWORD=${jenkins_pw}
+REPO_URL=${repo_url}
 COMPOSE_PROFILES=${ngrok_token != "" ? "tunnel" : ""}
 EOF
 chmod 600 .env
