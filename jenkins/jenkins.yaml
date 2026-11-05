@@ -1,0 +1,49 @@
+# Configuration as Code: nada se configura a mano en la interfaz.
+#   JENKINS_ADMIN_PASSWORD : contraseña del usuario admin (variable de entorno del contenedor)
+#   /run/secrets/lifemap.env : el .env del servidor, montado de solo lectura; se guarda como credencial
+#                              'lifemap-env' (Secret file) que el Jenkinsfile usa con withCredentials
+#   REPO_URL : repositorio a desplegar
+jenkins:
+  systemMessage: "LifeMap CI/CD: un merge a main se prueba y se despliega solo."
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: "admin"
+          password: "${JENKINS_ADMIN_PASSWORD}"
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+  numExecutors: 2
+
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+          - file:
+              scope: GLOBAL
+              id: "lifemap-env"
+              description: ".env del servidor (MONGO_*, KAGGLE_*, NGROK_*)"
+              fileName: ".env"
+              secretBytes: "${base64:${readFile:/run/secrets/lifemap.env}}"
+
+jobs:
+  - script: >
+      pipelineJob('lifemap') {
+        description('Checkout, validar compose, pytest, build y despliegue (solo main).')
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote { url('${REPO_URL:-https://github.com/elrios893/lifemap.git}') }
+                branches('*/main')
+              }
+            }
+            scriptPath('Jenkinsfile')
+          }
+        }
+        triggers {
+          githubPush()
+          scm('H/2 * * * *')
+        }
+      }

@@ -107,10 +107,14 @@ services:
     image: lifemap-jenkins:latest
     restart: unless-stopped
     user: root   # socket de Docker del host
+    environment:
+      JENKINS_ADMIN_PASSWORD: ${JENKINS_ADMIN_PASSWORD}
+      REPO_URL: ${REPO_URL:-https://github.com/elrios893/lifemap.git}
     ports: ["8088:8080", "50000:50000"]
     volumes:
       - jenkins_home:/var/jenkins_home
       - /var/run/docker.sock:/var/run/docker.sock
+      - ./.env:/run/secrets/lifemap.env:ro
     mem_limit: 1g
 
   # ---------- ngrok: URL fija para la API (perfil "tunnel": COMPOSE_PROFILES=tunnel en .env) ----------

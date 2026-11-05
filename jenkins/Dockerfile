@@ -10,4 +10,10 @@ RUN apt-get update \
  && apt-get update \
  && apt-get install -y --no-install-recommends docker-ce-cli docker-compose-plugin \
  && rm -rf /var/lib/apt/lists/*
-RUN jenkins-plugin-cli --plugins git workflow-aggregator credentials-binding github
+
+# Jenkins arranca ya configurado (JCasC): usuario admin, credencial lifemap-env y job del pipeline.
+RUN jenkins-plugin-cli --plugins git workflow-aggregator credentials-binding plain-credentials github \
+    configuration-as-code job-dsl
+COPY jenkins.yaml /var/jenkins_config/jenkins.yaml
+ENV CASC_JENKINS_CONFIG=/var/jenkins_config/jenkins.yaml \
+    JAVA_OPTS="-Djenkins.install.runSetupWizard=false"

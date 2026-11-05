@@ -3,7 +3,7 @@
 //   'lifemap-env' (Secret file) = contenido de .env (MONGO_*, KAGGLE_*, NGROK_*, COMPOSE_PROFILES)
 pipeline {
     agent any
-    options { timestamps(); disableConcurrentBuilds() }
+    options { disableConcurrentBuilds() }
     triggers { pollSCM('H/2 * * * *') }   // respaldo si el webhook de GitHub no llega
 
     environment {
@@ -34,7 +34,7 @@ pipeline {
         stage('Build imágenes') {
             steps {
                 withCredentials([file(credentialsId: 'lifemap-env', variable: 'ENV_FILE')]) {
-                    sh 'GIT_COMMIT=$GIT_COMMIT_SHORT docker compose --env-file "$ENV_FILE" build'
+                    sh 'GIT_COMMIT=$GIT_COMMIT_SHORT docker compose --env-file "$ENV_FILE" build api dask-scheduler spark-master'
                 }
             }
         }
