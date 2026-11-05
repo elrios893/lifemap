@@ -16,7 +16,12 @@ MONGO_PASSWORD="$(grep '^MONGO_PASSWORD=' .env | cut -d= -f2- | tr -d '\r')"
 MONGO_USER="$(grep '^MONGO_USER=' .env | cut -d= -f2- | tr -d '\r')"
 export MSYS_NO_PATHCONV=1
 
-ingest() { docker run --rm --network "$NET" --env-file .env -v "$VOL":/data "$@" lifemap-ingest:latest; }
+# ingest [-e VAR=valor] comando...   (las opciones de docker van ANTES del nombre de la imagen)
+ingest() {
+  local extra=()
+  if [[ "${1:-}" == "-e" ]]; then extra=(-e "$2"); shift 2; fi
+  docker run --rm --network "$NET" --env-file .env -v "$VOL":/data "${extra[@]}" lifemap-ingest:latest "$@"
+}
 spark_job() {
   docker exec -e MONGO_URI="mongodb://$MONGO_USER:$MONGO_PASSWORD@mongo:27017/?authSource=admin" \
     "$(docker compose ps -q spark-master)" /opt/spark/bin/spark-submit --master spark://spark-master:7077 \
