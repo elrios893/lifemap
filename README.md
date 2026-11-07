@@ -41,6 +41,7 @@ Jenkins reconstruye y despliega la API cuando cambia `main`. Kafka y el streamin
 | `GET /zones/summary?lat&lon&radius` | resumen de una zona con `$geoNear`: negocios, estrellas, % negativo, tasa de cierre |
 | `GET`/`POST /predict` (`text`) | sentimiento de una reseña nueva (mejor modelo guardado) |
 | `GET /` | interfaz web (mapa) que consume los endpoints anteriores |
+| `GET /entregauno` | marca de la Entrega 1 (`{"entrega":1,"estado":"terminada"}`), útil para ver un despliegue en vivo |
 
 Tasa de cierre = `cierres / (días-negocio / 365) × 100`.
 
