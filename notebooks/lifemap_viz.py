@@ -98,9 +98,9 @@ def tabla(df, titulo=None, formatos=None, resaltar=(), **_):
 
 
 # ---- barras horizontales: 4 px redondeado en la punta, cuadrado en la base --------------------------------------------
-def barras_h(ax, valores, color=S1, grosor_px=18, radio_px=4):
+def barras_h(ax, valores, color=S1, grosor_px=18, radio_px=4, margen=1.18):
     n = len(valores)
-    xmax = max(valores) * 1.18
+    xmax = max(valores) * margen
     ax.set_xlim(0, xmax); ax.set_ylim(n - 0.5, -0.5)
     caja = ax.get_window_extent()
     pxx, pxy = caja.width / xmax, caja.height / n
@@ -134,6 +134,9 @@ def matriz(ax, cm, etiquetas, titulo):
 # ---- código del repositorio con resaltado de sintaxis (claro u oscuro según el tema del visor) ------------------------------
 def fuente(ruta, desde, hasta=None):
     """Muestra, con resaltado de sintaxis, un fragmento del archivo REAL del repositorio: desde la línea que contiene `desde` hasta antes de la que contiene `hasta`."""
+    nombre_archivo = Path(ruta).name
+    if nombre_archivo.startswith("terraform.tfstate") or nombre_archivo in ("terraform.tfvars", ".env") or nombre_archivo.endswith(".pem"):
+        raise ValueError(f"{nombre_archivo} puede contener secretos y no se muestra nunca en el cuaderno")
     lineas = (ROOT / ruta).read_text(encoding="utf-8").splitlines()
     i = next(k for k, l in enumerate(lineas) if desde in l)
     j = len(lineas) if hasta is None else next(k for k in range(i + 1, len(lineas)) if hasta in lineas[k])
@@ -143,9 +146,9 @@ def fuente(ruta, desde, hasta=None):
     from pygments.formatters import HtmlFormatter
     from pygments.lexers import get_lexer_by_name
     nombre = Path(ruta).name
-    lenguaje = "groovy" if nombre == "Jenkinsfile" else {".py": "python", ".sh": "bash", ".yml": "yaml", ".yaml": "yaml"}.get(Path(ruta).suffix, "text")
+    lenguaje = "groovy" if nombre == "Jenkinsfile" else {".py": "python", ".sh": "bash", ".yml": "yaml", ".yaml": "yaml", ".tf": "terraform", ".tftpl": "bash"}.get(Path(ruta).suffix, "text")
     cuerpo = highlight(codigo, get_lexer_by_name(lenguaje), HtmlFormatter(cssclass="lm-code", style="default"))
-    html = _css_codigo() + f'<div class="lm-box"><div class="lm-head">{escape(ruta)} · líneas {i + 1}–{j}</div>{cuerpo}</div>'
+    html = _css_codigo(set(__import__('re').findall(r'class="([^"]+)"', cuerpo))) + f'<div class="lm-box"><div class="lm-head">{escape(ruta)} · líneas {i + 1}–{j}</div>{cuerpo}</div>'
     # text/plain queda como respaldo para los visores que no muestran HTML
     display({"text/html": html, "text/plain": f"# {ruta}, líneas {i + 1}–{j}\n{codigo}"}, raw=True)
 
@@ -153,14 +156,29 @@ def fuente(ruta, desde, hasta=None):
 _TEMAS_OSCUROS = (".vscode-dark", ".vscode-high-contrast:not(.vscode-high-contrast-light)", "body[data-jp-theme-light='false']")
 
 
-def _css_codigo():
+def _css_codigo(clases_usadas=()):
     """CSS del bloque de código con dos paletas: clara (por defecto) y oscura cuando el visor está en tema oscuro.
 
     Detección del tema: VS Code pone la clase `vscode-dark` en el body del visor de resultados; JupyterLab usa
     data-jp-theme-light='false'; un HTML suelto (el respaldo) usa la preferencia del sistema (prefers-color-scheme)."""
     from pygments.formatters import HtmlFormatter
-    claro = HtmlFormatter(style="default").get_style_defs(".lm-box .lm-code")
-    oscuro = HtmlFormatter(style="github-dark").get_style_defs(".lm-box .lm-code").splitlines()
+    usadas = {c for grupo in clases_usadas for c in grupo.split()}
+
+    def reglas(estilo):
+        """Solo las reglas de los tokens que el fragmento usa (sin las globales de Pygments: pre, td.linenos...) y sin comentarios."""
+        import re
+        out = []
+        for l in HtmlFormatter(style=estilo).get_style_defs(".lm-box .lm-code").splitlines():
+            if not l.startswith(".lm-box"):
+                continue
+            m = re.match(r"\.lm-box \.lm-code \.([A-Za-z0-9_]+)", l)
+            if m and clases_usadas and m.group(1) not in usadas:
+                continue
+            out.append(re.sub(r"\s*/\*.*?\*/", "", l))
+        return out
+
+    claro = "\n".join(reglas("default"))
+    oscuro = reglas("github-dark")
 
     def con_prefijo(prefijo):
         return "\n".join(f"{prefijo} {l}" if l.startswith(".lm-box") else l for l in oscuro)
