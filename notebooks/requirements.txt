@@ -1,0 +1,8 @@
+jupyter
+nbconvert
+pymongo>=4.6
+requests
+pandas
+numpy
+matplotlib
+python-dotenv
