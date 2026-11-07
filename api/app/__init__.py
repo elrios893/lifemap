@@ -24,6 +24,8 @@ def create_app(mongo_client=None):
     app.register_blueprint(geo_bp)
     from .routes_predict import bp as predict_bp
     app.register_blueprint(predict_bp)
+    from .ui import ui as ui_bp
+    app.register_blueprint(ui_bp)
 
     @app.errorhandler(ApiError)
     def bad_request(e):

@@ -5,6 +5,7 @@ services:
   mongo:
     command: ["mongod", "--wiredTigerCacheSizeGB", "0.5"]
     mem_limit: 1g
+    ports: ["127.0.0.1:27017:27017"]   # solo para el notebook de sustentación
   dask-scheduler:
     mem_limit: 384m
   dask-worker-1:
@@ -21,6 +22,6 @@ services:
       SPARK_WORKER_MEMORY: "1500m"
     mem_limit: 2g
   api:
-    ports: ["5000:5000"]
+    ports: ["5050:5000"]
   jenkins:
     profiles: ["ci"]

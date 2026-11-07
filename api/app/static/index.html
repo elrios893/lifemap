@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LifeMap</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/static/vendor/leaflet.css">
+<link rel="stylesheet" href="/static/vendor/leaflet.draw.css">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="side">
+    <header class="brand">
+      <h1>LifeMap</h1>
+      <p>Reputación, ubicación y supervivencia de negocios · <span id="health" class="health">comprobando…</span></p>
+    </header>
+
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-tab="near" class="on">Cerca</button>
+      <button role="tab" data-tab="within">Zona</button>
+      <button role="tab" data-tab="closure">Cierre</button>
+      <button role="tab" data-tab="sent">Sentimiento</button>
+    </nav>
+
+    <div class="panels">
+      <section id="tab-near" class="panel">
+        <p class="hint">Haz clic en el mapa (o arrastra el marcador) para elegir el centro.</p>
+        <label>Categoría <input id="n-cat" list="cats" placeholder="Todas (p. ej. Restaurants)"></label>
+        <datalist id="cats"></datalist>
+        <label style="margin-top:10px">Radio <output id="n-radius-o">800 m</output>
+          <input id="n-radius" type="range" min="100" max="5000" step="100" value="800">
+        </label>
+        <div class="row">
+          <label>Límite <input id="n-limit" type="number" min="1" max="500" value="100"></label>
+          <label>Centro <input id="n-center" readonly></label>
+        </div>
+        <button id="n-go" class="go">Buscar</button>
+        <div class="legend"><span><i style="background:#0f766e"></i>abierto</span><span><i style="background:#c2410c"></i>cerrado</span></div>
+        <div id="zone" class="stat"></div>
+      </section>
+
+      <section id="tab-within" class="panel" hidden>
+        <p class="hint">Dibuja un polígono o rectángulo con las herramientas del mapa (arriba a la izquierda).</p>
+        <div class="row">
+          <label>Categoría <input id="w-cat" list="cats" placeholder="Todas"></label>
+          <label>Límite <input id="w-limit" type="number" min="1" max="500" value="300"></label>
+        </div>
+        <button id="w-clear" class="ghost">Borrar zona</button>
+      </section>
+
+      <section id="tab-closure" class="panel" hidden>
+        <p class="hint">Tasa de cierre anualizada (cierres por cada 100 años-negocio), calculada con MapReduce en Spark.</p>
+        <div class="seg two" id="c-by">
+          <button data-by="category" class="on">Categoría</button>
+          <button data-by="geohash">Zona (geohash)</button>
+        </div>
+        <div class="row">
+          <label>Mínimo de días-negocio <input id="c-min" type="number" min="0" value="20000" step="5000"></label>
+          <label>Orden <select id="c-order"><option value="desc">Mayor tasa</option><option value="asc">Menor tasa</option></select></label>
+        </div>
+        <label>Cuántos <input id="c-limit" type="number" min="1" max="200" value="25"></label>
+        <button id="c-go" class="go" style="margin-top:10px">Consultar</button>
+      </section>
+
+      <section id="tab-sent" class="panel" hidden>
+        <p class="hint">Clasifica una reseña nueva (en inglés) con el mejor modelo entrenado en Spark.</p>
+        <textarea id="s-text">The food was great and the staff were very friendly.</textarea>
+        <button id="s-go" class="go">Clasificar</button>
+        <div id="s-out" style="margin-top:12px"></div>
+      </section>
+
+      <div id="summary" class="summary" aria-live="polite"></div>
+      <ol id="list" class="list"></ol>
+    </div>
+
+    <details class="raw" open>
+      <summary>JSON crudo de la API</summary>
+      <div class="rawbar">
+        <code id="raw-url">—</code>
+        <button id="raw-copy" class="ghost sm">Copiar URL</button>
+        <a id="raw-open" class="ghost sm" target="_blank" rel="noopener">Abrir</a>
+      </div>
+      <pre id="raw-meta"></pre>
+      <pre id="raw-body"></pre>
+    </details>
+  </aside>
+
+  <main class="stage">
+    <div id="map"></div>
+    <div id="notice" class="notice" hidden>Sin mosaicos del mapa (sin internet): se muestran solo los puntos.</div>
+  </main>
+</div>
+
+<script src="/static/vendor/leaflet.js"></script>
+<script src="/static/vendor/leaflet.draw.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>
