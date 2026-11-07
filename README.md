@@ -12,6 +12,9 @@ El sistema corre en una VM de AWS que se **arma y se desarma con Terraform** par
 cuando la VM está arriba (`terraform apply`, ≈ 5 min hasta `/health` y ≈ 7 min con los datos restaurados). `/health` incluye el **hash del commit desplegado**.
 Jenkins: `http://<IP de la VM>:8088` (la IP sale de `terraform output`).
 
+> **Aviso de ngrok.** La primera vez que se abre la URL en un navegador, ngrok (plan gratuito) muestra una página de aviso con el botón **Visit Site**; basta pulsarlo una vez.
+> Las llamadas con `curl` o desde otros programas no la ven. Si se prefiere evitarla, se puede entrar por la IP de la VM (`http://<IP>/`).
+
 ## Qué hace
 
 Plataforma batch sobre `docker compose`: descarga con la API de Kaggle → limpieza distribuida (Dask) → MongoDB con GeoJSON e índice `2dsphere`
