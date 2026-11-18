@@ -3,6 +3,14 @@
 exec > >(tee -a /var/log/lifemap-init.log) 2>&1
 set -euxo pipefail
 
+# Swap de 4 GB: los limites de memoria de los contenedores suman mas que los 16 GB de la VM (Kafka, streaming y, durante un
+# build de Jenkins, la prueba de humo); el swap evita que el kernel mate un contenedor por un pico.
+fallocate -l 4G /swapfile
+chmod 600 /swapfile
+mkswap /swapfile
+swapon /swapfile
+echo '/swapfile none swap sw 0 0' >> /etc/fstab
+
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install -y ca-certificates curl git
@@ -23,13 +31,16 @@ S3_BUCKET=${s3_bucket}
 S3_PREFIX=lifemap
 JENKINS_ADMIN_PASSWORD=${jenkins_pw}
 REPO_URL=${repo_url}
+CUTOFF_T=2021-01-19
 COMPOSE_PROFILES=${ngrok_token != "" ? "tunnel" : ""}
 EOF
 chmod 600 .env
 
 GIT_COMMIT=$(git rev-parse HEAD) docker compose up -d --build
 
-# Si hay respaldo en S3 (Mongo + modelos) se restaura solo; si no, queda el sistema vacío y se corre scripts/run_pipeline.sh.
+# Si hay respaldo en S3 (Mongo, modelos y reseñas reservadas) se restaura solo; si no, queda el sistema vacío y se corre
+# scripts/run_pipeline.sh (con KAGGLE_USERNAME y KAGGLE_API_TOKEN agregados al .env por SSH: nunca por Terraform, para que no
+# queden en el estado ni en el user data). El servicio `stream` espera solo a que existan el modelo y los negocios.
 export PATH=$PATH:/snap/bin
 bash scripts/restore_from_s3.sh || echo "restauración falló: correr scripts/run_pipeline.sh"
 echo "lifemap listo"
