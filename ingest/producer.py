@@ -25,7 +25,11 @@ CUTOFF_T = os.environ.get("CUTOFF_T", "2021-01-19")
 
 def reserved_reviews(cutoff: str, clean: Path = CLEAN) -> pd.DataFrame:
     """Reseñas con date > T, ordenadas por fecha (desempate por review_id para que el orden sea determinista)."""
-    df = pd.read_parquet(clean / "review.parquet", columns=["review_id", "business_id", "stars", "text", "date"],
+    # Si existe reserved_reviews.parquet (solo las posteriores a T, ~pocas decenas de MB: es lo que viaja en el respaldo de S3
+    # a la VM) se lee ese; si no, se filtra el review.parquet completo.
+    reserved = clean / "reserved_reviews.parquet"
+    df = pd.read_parquet(reserved if reserved.exists() else clean / "review.parquet",
+                         columns=["review_id", "business_id", "stars", "text", "date"],
                          filters=[("date", ">", pd.Timestamp(cutoff))])
     return df.sort_values(["date", "review_id"], kind="stable").reset_index(drop=True)
 

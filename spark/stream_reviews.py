@@ -16,11 +16,13 @@ Además un listener escribe en `stream_status` el retraso del consumidor (lo lee
 Regla de hotspot: la celda es hotspot si su % negativo sube HOTSPOT_DELTA puntos porcentuales frente a la ventana anterior,
 y ambas ventanas tienen al menos HOTSPOT_MIN_N reseñas (con pocas reseñas el porcentaje es ruido).
 
-Variables: MONGO_URI, MONGO_DB, KAFKA_BOOTSTRAP, KAFKA_TOPIC, CUTOFF_T, MODELS_DIR, CHECKPOINT_DIR, TRIGGER_SECONDS,
+Variables: MONGO_URI, MONGO_DB, KAFKA_BOOTSTRAP, KAFKA_TOPIC, CUTOFF_T, MODELS_DIR, CHECKPOINT_DIR, STREAM_PREFIX, TRIGGER_SECONDS,
            HOTSPOT_DELTA (puntos, 10), HOTSPOT_MIN_N (10), MAX_OFFSETS_PER_TRIGGER (2000).
 """
 import json
 import os
+import threading
+import time
 from datetime import date, datetime, timedelta, timezone
 
 from pymongo import ASCENDING, GEOSPHERE, MongoClient, UpdateOne
@@ -38,6 +40,9 @@ TOPIC = os.environ.get("KAFKA_TOPIC", "reviews")
 CUTOFF_T = os.environ.get("CUTOFF_T", "2021-01-19")
 MODELS = os.environ.get("MODELS_DIR", "/models")
 CHECKPOINTS = os.environ.get("CHECKPOINT_DIR", "/checkpoints")
+# Prefijo de las colecciones que escribe el flujo. Vacío en producción; la prueba de humo de Jenkins usa "smoke_" para no tocar
+# los datos reales (junto con KAFKA_TOPIC=reviews_smoke y su propio checkpoint).
+PREFIX = os.environ.get("STREAM_PREFIX", "")
 TRIGGER = f'{os.environ.get("TRIGGER_SECONDS", "5")} seconds'
 HOTSPOT_DELTA = float(os.environ.get("HOTSPOT_DELTA", "10"))
 HOTSPOT_MIN_N = int(os.environ.get("HOTSPOT_MIN_N", "10"))
@@ -137,7 +142,7 @@ def score_and_alert(spark, db, rows, risk, now):
     hist, live = {}, {}
     for r in db.reviews.find({"business_id": {"$in": ids}, "date": {"$lte": t}}, {"business_id": 1, "stars": 1, "date": 1}):
         hist.setdefault(r["business_id"], []).append((r["date"], int(r["stars"])))
-    for r in db.reviews_stream.find({"business_id": {"$in": ids}}, {"business_id": 1, "stars": 1, "date": 1}):
+    for r in db[PREFIX + "reviews_stream"].find({"business_id": {"$in": ids}}, {"business_id": 1, "stars": 1, "date": 1}):
         live.setdefault(r["business_id"], []).append((r["date"], int(r["stars"])))
 
     feats = {}
@@ -174,8 +179,8 @@ def score_and_alert(spark, db, rows, risk, now):
         else:   # si ya tenía alerta y el puntaje bajó del umbral, deja de estar activa
             alert_ops.append(UpdateOne({"_id": bid, "active": True}, {"$set": {
                 "active": False, "probability": round(p, 4), "as_of": as_of[bid], "updated_at": now}}))
-    db.risk_scores.bulk_write(score_ops, ordered=False)
-    db.alerts.bulk_write(alert_ops, ordered=False)
+    db[PREFIX + "risk_scores"].bulk_write(score_ops, ordered=False)
+    db[PREFIX + "alerts"].bulk_write(alert_ops, ordered=False)
     return n_alerts
 
 
@@ -191,7 +196,7 @@ def make_review_writer(version, risk=None):
             "probabilities": dict(zip(LABELS, [round(float(x), 4) for x in r["p"]])),
             "processed_at": now, "batch_id": int(epoch_id), "model_version": version["sha256"][:12]}}, upsert=True)
             for r in rows]
-        db.reviews_stream.bulk_write(ops, ordered=False)
+        db[PREFIX + "reviews_stream"].bulk_write(ops, ordered=False)
         if risk:
             n = score_and_alert(batch.sparkSession, db, rows, risk, now)
             print(f"lote {epoch_id}: {len(rows)} reseñas, alertas nuevas o vigentes: {n}", flush=True)
@@ -214,13 +219,13 @@ def write_windows(batch, epoch_id):
             "geohash": r["geohash"], "window_start": start, "window_end": end, "n": n, "negatives": neg,
             "pct_negative": round(neg / n * 100.0, 2), "geometry": cell_polygon(r["geohash"]),
             "center": cell_center(r["geohash"]), "updated_at": now, "batch_id": int(epoch_id)}}, upsert=True))
-    db.geo_windows.bulk_write(ops, ordered=False)
+    db[PREFIX + "geo_windows"].bulk_write(ops, ordered=False)
 
     # Hotspot: se recalcula para cada ventana tocada Y para la siguiente (su ventana anterior pudo cambiar), con los conteos
     # ya guardados. Así el resultado depende solo de los datos y no del ritmo con que llegaron los lotes.
     todo = {(gh, s) for gh, s in touched} | {(gh, s + step) for gh, s in touched}
     ids = {wid(gh, s) for gh, s in todo} | {wid(gh, s - step) for gh, s in todo}
-    docs = {d["_id"]: d for d in db.geo_windows.find({"_id": {"$in": list(ids)}}, {"n": 1, "pct_negative": 1})}
+    docs = {d["_id"]: d for d in db[PREFIX + "geo_windows"].find({"_id": {"$in": list(ids)}}, {"n": 1, "pct_negative": 1})}
     flags = []
     for gh, s in todo:
         cur, prev = docs.get(wid(gh, s)), docs.get(wid(gh, s - step))
@@ -231,7 +236,23 @@ def write_windows(batch, epoch_id):
         flags.append(UpdateOne({"_id": wid(gh, s)}, {"$set": {
             "prev_pct_negative": prev["pct_negative"] if prev else None, "delta_pp": delta, "hotspot": hotspot}}))
     if flags:
-        db.geo_windows.bulk_write(flags, ordered=False)
+        db[PREFIX + "geo_windows"].bulk_write(flags, ordered=False)
+
+
+def start_heartbeat(spark, version, every=10):
+    """Latido: sin datos, Spark no emite eventos de progreso, así que un hilo escribe cada pocos segundos que el job sigue vivo
+    y si sus consultas están activas. /health lo usa para distinguir 'sin datos' de 'detenido'."""
+    def beat():
+        while True:
+            try:
+                queries = {q.name: bool(q.isActive) for q in spark.streams.active}
+                mongo_db()[PREFIX + "stream_status"].update_one({"_id": "stream"}, {"$set": {
+                    "heartbeat_at": utcnow(), "queries": queries, "model_version": version["sha256"][:12],
+                    "cutoff_t": CUTOFF_T}}, upsert=True)
+            except Exception as exc:  # noqa: BLE001  (un fallo de Mongo no debe tumbar el flujo)
+                print("latido: no se pudo escribir en MongoDB:", exc, flush=True)
+            time.sleep(every)
+    threading.Thread(target=beat, name="heartbeat", daemon=True).start()
 
 
 class LagListener(StreamingQueryListener):
@@ -256,7 +277,7 @@ class LagListener(StreamingQueryListener):
             lag = sum(int(latest[k]) - int(end.get(k, 0)) for k in latest)
         except Exception:  # noqa: BLE001  (sin datos todavía)
             lag = None
-        mongo_db().stream_status.update_one({"_id": "stream"}, {"$set": {
+        mongo_db()[PREFIX + "stream_status"].update_one({"_id": "stream"}, {"$set": {
             "consumer_lag": lag, "batch_id": int(p.batchId), "input_rows": int(p.numInputRows),
             "updated_at": utcnow(), "model_version": self.version["sha256"][:12], "cutoff_t": CUTOFF_T}}, upsert=True)
 
@@ -275,12 +296,12 @@ def main():
         raise SystemExit(f'el modelo se entrenó con T={version["cutoff_t"]} y el flujo usa T={CUTOFF_T}')
 
     db = mongo_db()
-    db.geo_windows.create_index([("geometry", GEOSPHERE)])
-    db.geo_windows.create_index([("geohash", ASCENDING), ("window_start", ASCENDING)])
-    db.geo_windows.create_index([("center", GEOSPHERE)])
-    db.reviews_stream.create_index([("business_id", ASCENDING), ("date", ASCENDING)])
-    db.alerts.create_index([("geometry", GEOSPHERE)])
-    db.alerts.create_index([("active", ASCENDING), ("probability", -1)])
+    db[PREFIX + "geo_windows"].create_index([("geometry", GEOSPHERE)])
+    db[PREFIX + "geo_windows"].create_index([("geohash", ASCENDING), ("window_start", ASCENDING)])
+    db[PREFIX + "geo_windows"].create_index([("center", GEOSPHERE)])
+    db[PREFIX + "reviews_stream"].create_index([("business_id", ASCENDING), ("date", ASCENDING)])
+    db[PREFIX + "alerts"].create_index([("geometry", GEOSPHERE)])
+    db[PREFIX + "alerts"].create_index([("active", ASCENDING), ("probability", -1)])
     risk = load_risk()
     businesses = (spark.read.format("mongodb").option("database", MONGO_DB).option("collection", "businesses").load()
                   .select(F.col("_id").alias("business_id"), "geohash").where(F.col("geohash").isNotNull()).cache())
@@ -301,6 +322,7 @@ def main():
     (windows.writeStream.queryName("windows").outputMode("update").foreachBatch(write_windows)
      .option("checkpointLocation", f"{CHECKPOINTS}/windows").trigger(processingTime=TRIGGER).start())
 
+    start_heartbeat(spark, version)
     spark.streams.awaitAnyTermination()
 
 

@@ -14,7 +14,6 @@ Se comparan regresión logística y GBT, ambos con pesos de clase por el desbala
 Salidas en /models: risk_best (PipelineModel entrenado con todos los datos), risk_metrics.json.
 Uso: spark-submit --master spark://spark-master:7077 /opt/jobs/risk_train.py
 """
-import hashlib
 import json
 import os
 import shutil
@@ -29,6 +28,7 @@ from pyspark.ml.feature import VectorAssembler
 from pyspark.ml.functions import vector_to_array
 from pyspark.sql import SparkSession, functions as F, types as T
 
+from model_version import fingerprint
 from risk_features import FEATURES, compute, count_competitors
 
 MONGO_URI = os.environ["MONGO_URI"]
@@ -86,17 +86,6 @@ def best_threshold(scored):
         if f1 > best[0]:
             best = (f1, score, prec, rec)
     return {"threshold": best[1], "f1": best[0], "precision": best[2], "recall": best[3]}
-
-
-def fingerprint(path):
-    h = hashlib.sha256()
-    for root, _, files in sorted(os.walk(path)):
-        for f in sorted(files):
-            fp = os.path.join(root, f)
-            h.update(os.path.relpath(fp, path).replace("\\", "/").encode())
-            with open(fp, "rb") as fh:
-                h.update(fh.read())
-    return h.hexdigest()
 
 
 def main():

@@ -14,7 +14,6 @@ Salidas (volumen /models):
 
 Uso: spark-submit --master spark://spark-master:7077 /opt/jobs/sentiment_train.py
 """
-import hashlib
 import json
 import os
 import shutil
@@ -25,6 +24,8 @@ from pyspark.ml import Pipeline
 from pyspark.ml.classification import LogisticRegression, NaiveBayes
 from pyspark.ml.feature import HashingTF, IDF, RegexTokenizer, StopWordsRemover
 from pyspark.sql import SparkSession, functions as F
+
+from model_version import fingerprint
 
 CLEAN = os.environ.get("CLEAN_DIR", "/data/clean")
 MODELS = os.environ.get("MODELS_DIR", "/models")
@@ -41,19 +42,6 @@ def build_pipeline(classifier):
     tf = HashingTF(inputCol="filtered", outputCol="tf", numFeatures=NUM_FEATURES)
     idf = IDF(inputCol="tf", outputCol="features", minDocFreq=2)
     return Pipeline(stages=[tokenizer, stop, tf, idf, classifier])
-
-
-def model_fingerprint(path):
-    """SHA-256 de todos los archivos del modelo (en orden): identifica de forma única la versión guardada."""
-    h = hashlib.sha256()
-    for root, _, files in sorted(os.walk(path)):
-        for f in sorted(files):
-            fp = os.path.join(root, f)
-            h.update(os.path.relpath(fp, path).replace("\\", "/").encode())
-            with open(fp, "rb") as fh:
-                for chunk in iter(lambda: fh.read(1 << 20), b""):
-                    h.update(chunk)
-    return h.hexdigest()
 
 
 def evaluate(pred, name, train_s):
@@ -134,7 +122,7 @@ def main():
     best_m = next(m for m in report["models"] if m["model"] == best)
     version = {"cutoff_t": CUTOFF_T, "best_model": best, "macro_f1": best_m["macro_f1"], "accuracy": best_m["accuracy"],
                "trained_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-               "sha256": model_fingerprint(f"{MODELS}/sentiment_best")}
+               "sha256": fingerprint(f"{MODELS}/sentiment_best")}
     with open(f"{MODELS}/version.json", "w") as fh:
         json.dump(version, fh, ensure_ascii=False, indent=2)
     print("versión del modelo:", version["sha256"][:12], "| corte T:", CUTOFF_T)

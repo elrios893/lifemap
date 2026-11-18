@@ -13,17 +13,24 @@ STALE_SECONDS = 60
 
 
 def stream_status(db):
-    """Estado del job de streaming (lo escribe stream_reviews.py): retraso del consumidor y latido. Informativo: no cambia el
-    código HTTP de /health, porque el flujo puede estar legítimamente detenido (p. ej. mientras se restauran los datos)."""
+    """Estado del job de streaming (lo escribe stream_reviews.py): latido, consultas activas y retraso del consumidor.
+    Informativo: no cambia el código HTTP de /health, porque el flujo puede estar legítimamente detenido (p. ej. mientras se
+    restauran los datos). 'up' = latido reciente y todas las consultas activas; el retraso es el del último lote procesado."""
     try:
         doc = db.stream_status.find_one({"_id": "stream"})
     except Exception as exc:  # noqa: BLE001
         return {"status": f"down: {exc.__class__.__name__}"}
-    if not isinstance(doc, dict) or not doc.get("updated_at"):
+    beat = doc.get("heartbeat_at") or doc.get("updated_at") if isinstance(doc, dict) else None
+    if not beat:
         return {"status": "not-started"}
-    age = (datetime.now(timezone.utc) - doc["updated_at"].replace(tzinfo=timezone.utc)).total_seconds()
-    return {"status": "up" if age <= STALE_SECONDS else "stale", "consumer_lag": doc.get("consumer_lag"),
-            "last_batch": doc.get("batch_id"), "seconds_since_last_progress": round(age),
+    now = datetime.now(timezone.utc)
+    age = (now - beat.replace(tzinfo=timezone.utc)).total_seconds()
+    queries = doc.get("queries") or {}
+    status = "up" if age <= STALE_SECONDS and all(queries.values()) else ("stale" if age > STALE_SECONDS else "degraded")
+    progress = doc.get("updated_at")
+    return {"status": status, "consumer_lag": doc.get("consumer_lag"), "queries": queries, "last_batch": doc.get("batch_id"),
+            "seconds_since_heartbeat": round(age),
+            "seconds_since_last_batch": round((now - progress.replace(tzinfo=timezone.utc)).total_seconds()) if progress else None,
             "model_version": doc.get("model_version"), "cutoff_t": doc.get("cutoff_t")}
 
 

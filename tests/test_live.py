@@ -145,11 +145,17 @@ def test_survival_by_zone_route_is_not_swallowed_by_category_route():
 
 def test_health_reports_stream_lag_without_changing_status():
     db = MagicMock()
-    db.stream_status.find_one.return_value = {"_id": "stream", "consumer_lag": 42, "batch_id": 7,
-                                              "updated_at": datetime.now(timezone.utc), "model_version": "abc"}
-    body = _app(db).get("/health").get_json()
-    assert body["streaming"]["consumer_lag"] == 42 and body["streaming"]["status"] == "up"
-    db.stream_status.find_one.return_value = {"_id": "stream", "updated_at": datetime.now(timezone.utc) - timedelta(minutes=5)}
+    now = datetime.now(timezone.utc)
+    db.stream_status.find_one.return_value = {"_id": "stream", "consumer_lag": 42, "batch_id": 7, "updated_at": now - timedelta(minutes=30),
+                                              "heartbeat_at": now, "queries": {"reviews": True, "windows": True}, "model_version": "abc"}
+    r = _app(db).get("/health")
+    body = r.get_json()
+    # sin datos hace 30 min pero con latido reciente: el servicio está vivo ('up'), no 'stale'
+    assert r.status_code == 200 and body["streaming"]["consumer_lag"] == 42 and body["streaming"]["status"] == "up"
+    assert body["streaming"]["seconds_since_last_batch"] >= 1800
+    db.stream_status.find_one.return_value = {"_id": "stream", "heartbeat_at": now - timedelta(minutes=5), "queries": {"reviews": True}}
     assert _app(db).get("/health").get_json()["streaming"]["status"] == "stale"
+    db.stream_status.find_one.return_value = {"_id": "stream", "heartbeat_at": now, "queries": {"reviews": True, "windows": False}}
+    assert _app(db).get("/health").get_json()["streaming"]["status"] == "degraded"
     db.stream_status.find_one.return_value = None
     assert _app(db).get("/health").get_json()["streaming"]["status"] == "not-started"
