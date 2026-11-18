@@ -1,4 +1,5 @@
 import os
+import socket
 
 import requests
 from flask import Flask, jsonify
@@ -34,16 +35,22 @@ def create_app(mongo_client=None):
     def http_ok(url):
         requests.get(url, timeout=3).raise_for_status()
 
+    def tcp_ok(hostport):
+        host, port = hostport.rsplit(":", 1)
+        socket.create_connection((host, int(port)), timeout=3).close()
+
     @app.get("/health")
     def health():
         spark = os.environ.get("SPARK_MASTER_UI")
         dask = os.environ.get("DASK_SCHEDULER_UI")
+        kafka = os.environ.get("KAFKA_BOOTSTRAP")
         services = {
             "api": "up",
             "mongo": _probe(lambda: app.config["DB"].client.admin.command("ping")),
             "spark": _probe(lambda: http_ok(f"{spark}/json/")) if spark else "not-configured",
             "dask": _probe(lambda: http_ok(f"{dask}/health")) if dask else "not-configured",
-            # E2: "kafka" y retraso del consumidor
+            "kafka": _probe(lambda: tcp_ok(kafka)) if kafka else "not-configured",
+            # E2: retraso del consumidor
         }
         ok = all(v in ("up", "not-configured") for v in services.values())
         return jsonify(status="ok" if ok else "degraded", services=services,
