@@ -21,6 +21,8 @@ services:
       SPARK_WORKER_CORES: "2"
       SPARK_WORKER_MEMORY: "1500m"
     mem_limit: 2g
+  stream:
+    mem_limit: 1600m   # en local: poner STREAM_MEMORY=1g en .env
   kafka:
     environment:
       KAFKA_HEAP_OPTS: -Xms192m -Xmx320m

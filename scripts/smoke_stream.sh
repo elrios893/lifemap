@@ -42,7 +42,7 @@ cleanup 2>/dev/null || true
 dc exec -T kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic "$TOPIC" --partitions 3 --replication-factor 1 >/dev/null
 
 say "arrancando el streaming nuevo en aislamiento (prefijo smoke_, topic $TOPIC)"
-dc run -d --no-deps --name "$NAME" -e STREAM_PREFIX=smoke_ -e KAFKA_TOPIC="$TOPIC" -e CHECKPOINT_DIR=/tmp/smoke_ckpt \
+STREAM_MEMORY=900m dc run -d --no-deps --name "$NAME" -e STREAM_PREFIX=smoke_ -e KAFKA_TOPIC="$TOPIC" -e CHECKPOINT_DIR=/tmp/smoke_ckpt \
   -e TRIGGER_SECONDS=2 -e STREAM_MEMORY=800m stream >/dev/null
 for i in $(seq 1 60); do
   [ "$(docker inspect -f '{{.State.Running}}' "$NAME" 2>/dev/null)" = "true" ] || fail "el streaming de prueba se detuvo"
