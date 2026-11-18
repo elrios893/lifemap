@@ -10,6 +10,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 SAMPLE_REVIEWS="${SAMPLE_REVIEWS:-0}"
+CUTOFF_T="${CUTOFF_T:-2021-01-19}"   # Entrega 2: el modelo entrena hasta T; lo posterior lo reproduce Kafka
 NET="${COMPOSE_PROJECT_NAME:-lifemap}_default"
 VOL="${COMPOSE_PROJECT_NAME:-lifemap}_data"
 MONGO_PASSWORD="$(grep '^MONGO_PASSWORD=' .env | cut -d= -f2- | tr -d '\r')"
@@ -23,7 +24,7 @@ ingest() {
   docker run --rm --network "$NET" --env-file .env -v "$VOL":/data "${extra[@]}" lifemap-ingest:latest "$@"
 }
 spark_job() {
-  docker exec -e MONGO_URI="mongodb://$MONGO_USER:$MONGO_PASSWORD@mongo:27017/?authSource=admin" \
+  docker exec -e CUTOFF_T="$CUTOFF_T" -e MONGO_URI="mongodb://$MONGO_USER:$MONGO_PASSWORD@mongo:27017/?authSource=admin" \
     "$(docker compose ps -q spark-master)" /opt/spark/bin/spark-submit --master spark://spark-master:7077 \
     --driver-memory "${DRIVER_MEMORY:-1g}" --executor-memory "${EXECUTOR_MEMORY:-2500m}" \
     --conf spark.jars.ivy=/tmp/ivy "$@"
