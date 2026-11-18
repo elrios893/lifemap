@@ -128,6 +128,23 @@ services:
       kafka-init: {condition: service_completed_successfully}
     mem_limit: 768m
 
+  # ---------- Structured Streaming: Kafka -> inferencia -> MongoDB (+ ventanas por geohash) ----------
+  # Corre en modo local (STREAM_MASTER) para no competir con los trabajos batch por el worker. Espera a que exista el modelo.
+  stream:
+    image: lifemap-spark:latest
+    restart: unless-stopped
+    environment:
+      MONGO_URI: mongodb://${MONGO_USER}:${MONGO_PASSWORD}@mongo:27017/?authSource=admin
+      MONGO_DB: ${MONGO_DB:-lifemap}
+      KAFKA_BOOTSTRAP: kafka:9092
+      CUTOFF_T: ${CUTOFF_T:-2021-01-19}
+    command: ["bash", "-c", "until [ -f /models/version.json ]; do echo 'esperando el modelo...'; sleep 5; done; exec /opt/spark/bin/spark-submit --master ${STREAM_MASTER:-local[2]} --driver-memory ${STREAM_MEMORY:-1g} --conf spark.jars.ivy=/tmp/ivy /opt/jobs/stream_reviews.py"]
+    volumes: ["models:/models:ro", "stream_ckpt:/checkpoints"]
+    depends_on:
+      kafka-init: {condition: service_completed_successfully}
+      mongo: {condition: service_healthy}
+    mem_limit: 1600m
+
   # ---------- API Flask ----------
   api:
     build:
@@ -183,6 +200,7 @@ services:
       api: {condition: service_healthy}
 
 volumes:
+  stream_ckpt:
   kafka_data:
   mongo_data:
   jenkins_home:
