@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Respalda en S3 lo que costó calcular: la base MongoDB (negocios con vida y sentimiento, reseñas, tasas), los modelos
-# de Spark, las métricas y el reporte de limpieza. Con esto se puede hacer `terraform destroy` y rearmar en minutos.
+# de Spark (sentimiento y riesgo, con su versión), las métricas, el reporte de limpieza y las reseñas reservadas posteriores a T
+# (las que reproduce el productor de Kafka). El estado del streaming (reviews_stream, geo_windows, alerts, stream_status) NO se respalda:
+# cada demostración empieza de cero. Con esto se puede hacer `terraform destroy` y rearmar en minutos.
 #
 # Uso (en la VM, con el sistema levantado):  ./scripts/backup_to_s3.sh
 # Requiere: .env con S3_BUCKET/S3_PREFIX, aws cli y el rol de instancia con escritura en s3://BUCKET/PREFIX/*
@@ -15,19 +17,22 @@ PROJECT="${COMPOSE_PROJECT_NAME:-lifemap}"
 DEST="s3://$BUCKET/$PREFIX/backup"
 [ -n "$BUCKET" ] || { echo "falta S3_BUCKET en .env"; exit 1; }
 
-echo "1/4 MongoDB -> $DEST/mongo.archive.gz"
-docker compose exec -T mongo mongodump -u "$MU" -p "$MP" --authenticationDatabase admin --db "$DB" --archive --gzip --quiet \
+echo "1/5 MongoDB -> $DEST/mongo.archive.gz"
+docker compose exec -T mongo mongodump -u "$MU" -p "$MP" --authenticationDatabase admin --db "$DB" --archive --gzip --quiet \n  --excludeCollection reviews_stream --excludeCollection geo_windows --excludeCollection alerts --excludeCollection stream_status \
   | aws s3 cp - "$DEST/mongo.archive.gz"
 
-echo "2/4 Modelos y métricas (volumen models) -> $DEST/models.tgz"
+echo "2/5 Modelos y métricas (volumen models) -> $DEST/models.tgz"
 docker run --rm -v "${PROJECT}_models":/m --entrypoint tar lifemap-spark:latest czf - -C /m . \
   | aws s3 cp - "$DEST/models.tgz"
 
-echo "3/4 Reporte de limpieza -> $DEST/clean_report.json"
+echo "3/5 Reporte de limpieza -> $DEST/clean_report.json"
 docker run --rm -v "${PROJECT}_data":/d --entrypoint cat lifemap-ingest:latest /d/clean/report.json \
   | aws s3 cp - "$DEST/clean_report.json"
 
-echo "4/4 Manifiesto"
+echo "4/5 Reseñas reservadas (posteriores a T) -> $DEST/reserved_reviews.parquet"
+docker run --rm -v "${PROJECT}_data":/d --entrypoint cat lifemap-ingest:latest /d/clean/reserved_reviews.parquet   | aws s3 cp - "$DEST/reserved_reviews.parquet"
+
+echo "5/5 Manifiesto"
 COUNTS="$(docker compose exec -T mongo mongosh -u "$MU" -p "$MP" --authenticationDatabase admin "$DB" --quiet \
   --eval 'print(JSON.stringify({businesses: db.businesses.countDocuments({}), reviews: db.reviews.countDocuments({}), closure_stats: db.closure_stats.countDocuments({})}))' | tr -d '\r')"
 printf '{"created_utc":"%s","commit":"%s","counts":%s}\n' "$(date -u +%FT%TZ)" "$(git rev-parse HEAD)" "$COUNTS" \

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Pipeline completo de datos de la Entrega 1, sobre el sistema ya levantado (docker compose up -d).
 #   descarga Kaggle -> limpieza Dask -> carga Mongo GeoJSON -> vida de negocios
-#   -> MapReduce de tasas -> sentimiento (NB y LR, hasta T) -> balanceo -> supervivencia (Kaplan-Meier)
+#   -> MapReduce de tasas -> sentimiento (NB y LR, hasta T) -> balanceo -> riesgo de cierre -> supervivencia (Kaplan-Meier)
 #
 # Uso:  ./scripts/run_pipeline.sh            (todo el área, p. ej. > 1.000.000 reseñas)
 #       SAMPLE_REVIEWS=200000 ./scripts/run_pipeline.sh   (muestra para desarrollo local)
@@ -33,10 +33,12 @@ step() { echo; echo "=== $(date +%H:%M:%S) $*"; }
 
 step "1/8 Descarga de Yelp (API de Kaggle)";           ingest python download.py
 step "2/8 Limpieza con Dask (SAMPLE_REVIEWS=$SAMPLE_REVIEWS)"; ingest -e SAMPLE_REVIEWS="$SAMPLE_REVIEWS" python clean.py
+ingest -e CUTOFF_T="$CUTOFF_T" python export_reserved.py   # reseñas posteriores a T: las reproduce el productor de Kafka
 step "3/8 Carga a MongoDB (GeoJSON + 2dsphere)";        ingest python load_mongo.py
 step "4/8 Vida de los negocios (días-negocio, evento, censura)"; ingest python life.py
 step "5/8 MapReduce: tasas de cierre";                  spark_job /opt/jobs/mapreduce_closure.py
 step "6/8 Sentimiento: Naive Bayes y regresión logística"; spark_job /opt/jobs/sentiment_train.py
 step "7/8 Balanceo de carga";                           spark_job /opt/jobs/balanceo.py 5
+step "7b/8 Modelo de riesgo de cierre (variables hasta T)"; DRIVER_MEMORY=2g spark_job /opt/jobs/risk_train.py
 step "8/8 Supervivencia: Kaplan-Meier por categoría y zona"; ingest python survival.py
 step "LISTO"
