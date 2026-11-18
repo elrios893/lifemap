@@ -34,11 +34,16 @@ Jenkins reconstruye y despliega la API cuando cambia `main`. Kafka y el streamin
 
 | Ruta | Qué hace |
 |---|---|
-| `GET /health` | estado de Mongo, Spark y Dask + commit desplegado |
+| `GET /health` | estado de Mongo, Spark, Dask y Kafka + commit desplegado + estado del streaming y retraso del consumidor |
 | `GET /businesses/near?lat&lon&radius[&category&limit]` | `$near`, ordenado por cercanía |
 | `GET`/`POST /businesses/within` | `$geoWithin` con un polígono GeoJSON (`polygon`) |
 | `GET /stats/closure?by=category\|geohash[&min_days&order&limit]` | tasa de cierre anualizada (MapReduce) |
 | `GET /zones/summary?lat&lon&radius` | resumen de una zona con `$geoNear`: negocios, estrellas, % negativo, tasa de cierre |
+| `GET /live/hotspots?[lat&lon&radius]&[window]&[only_hotspots]` | celdas de geohash de una ventana de 30 días con % negativo y hotspot (streaming); sin `lat/lon` devuelve todo el mapa |
+| `GET /live/trend?[lat&lon&radius]` | evolución del % de reseñas negativas por ventana |
+| `GET`/`POST /alerts?[lat&lon&radius]\|[polygon]&[min_probability]` | alertas de riesgo de cierre generadas en el flujo (con geometría y probabilidad) |
+| `GET /risk/near?lat&lon&radius[&min_probability]` | probabilidad de cierre en 12 meses de los negocios cercanos |
+| `GET /survival/<categoria>[?zone=\|compare=zones]` | curva de Kaplan-Meier con número en riesgo y mediana; `/survival/zone/<zona>` para una zona |
 | `GET`/`POST /predict` (`text`) | sentimiento de una reseña nueva (mejor modelo guardado) |
 | `GET /` | interfaz web (mapa) que consume los endpoints anteriores |
 | `GET /entregauno` | marca de la Entrega 1 (`{"entrega":1,"estado":"terminada"}`), útil para ver un despliegue en vivo |

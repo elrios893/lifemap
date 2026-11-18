@@ -65,6 +65,11 @@ def geohash_bbox(gh):
     return lat[0], lat[1], lon[0], lon[1]
 
 
+def cell_center(gh):
+    la0, la1, lo0, lo1 = geohash_bbox(gh)
+    return {"type": "Point", "coordinates": [(lo0 + lo1) / 2, (la0 + la1) / 2]}
+
+
 def cell_polygon(gh):
     la0, la1, lo0, lo1 = geohash_bbox(gh)
     return {"type": "Polygon", "coordinates": [[[lo0, la0], [lo1, la0], [lo1, la1], [lo0, la1], [lo0, la0]]]}
@@ -208,7 +213,7 @@ def write_windows(batch, epoch_id):
         ops.append(UpdateOne({"_id": wid(r["geohash"], start)}, {"$set": {
             "geohash": r["geohash"], "window_start": start, "window_end": end, "n": n, "negatives": neg,
             "pct_negative": round(neg / n * 100.0, 2), "geometry": cell_polygon(r["geohash"]),
-            "updated_at": now, "batch_id": int(epoch_id)}}, upsert=True))
+            "center": cell_center(r["geohash"]), "updated_at": now, "batch_id": int(epoch_id)}}, upsert=True))
     db.geo_windows.bulk_write(ops, ordered=False)
 
     # Hotspot: se recalcula para cada ventana tocada Y para la siguiente (su ventana anterior pudo cambiar), con los conteos
@@ -272,6 +277,7 @@ def main():
     db = mongo_db()
     db.geo_windows.create_index([("geometry", GEOSPHERE)])
     db.geo_windows.create_index([("geohash", ASCENDING), ("window_start", ASCENDING)])
+    db.geo_windows.create_index([("center", GEOSPHERE)])
     db.reviews_stream.create_index([("business_id", ASCENDING), ("date", ASCENDING)])
     db.alerts.create_index([("geometry", GEOSPHERE)])
     db.alerts.create_index([("active", ASCENDING), ("probability", -1)])
