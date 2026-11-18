@@ -14,7 +14,8 @@ docker compose exec -T kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server k
 docker run --rm -v "$VOL":/c alpine sh -c 'rm -rf /c/* /c/.[!.]* 2>/dev/null; true'
 docker compose exec -T mongo sh -c 'mongosh -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin "${MONGO_DB:-lifemap}" --quiet --eval "
   [\"reviews_stream\", \"geo_windows\", \"stream_status\", \"alerts\"].forEach(c => db.getCollection(c).deleteMany({}));
-  print(\"colecciones del streaming vaciadas\")"'
+  db.risk_scores.updateMany({}, [{\$set: {probability: \"\$baseline.probability\", as_of: \"\$baseline.as_of\", source: \"baseline\", alert: false}}]);
+  print(\"colecciones del streaming vaciadas; risk_scores vuelve a los puntajes base\")"'
 sleep 3
 docker compose up -d kafka-init
 docker compose up -d stream

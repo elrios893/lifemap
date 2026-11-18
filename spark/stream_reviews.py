@@ -7,6 +7,10 @@ Una sola aplicación, dos consultas sobre el topic `reviews`:
             (tiempo del evento, no de ingesta); cuenta reseñas y % negativas, guarda cada ventana con la geometría de su
             celda en `geo_windows` y marca el hotspot comparando con la ventana anterior de la misma celda.
 
+Alertas (E2.7): en el mismo foreachBatch, para los negocios que recibieron reseñas en el micro-lote se recalculan las variables
+de riesgo con la historia hasta T más lo recibido por el flujo (spark/risk_features.py), se puntúan con /models/risk_best y los
+que superan el umbral del modelo se guardan en `alerts` con su geometría. Todos los puntajes quedan en `risk_scores`.
+
 Además un listener escribe en `stream_status` el retraso del consumidor (lo lee /health).
 
 Regla de hotspot: la celda es hotspot si su % negativo sube HOTSPOT_DELTA puntos porcentuales frente a la ventana anterior,
@@ -24,6 +28,8 @@ from pyspark.ml import PipelineModel
 from pyspark.ml.functions import vector_to_array
 from pyspark.sql import SparkSession, functions as F, types as T
 from pyspark.sql.streaming import StreamingQueryListener
+
+from risk_features import FEATURES, compute, count_competitors
 
 MONGO_URI = os.environ["MONGO_URI"]
 MONGO_DB = os.environ.get("MONGO_DB", "lifemap")
@@ -97,7 +103,78 @@ def scored_stream(spark, model, businesses):
             .select("review_id", "business_id", "stars", "text", "event_time", "geohash", "sentiment", "probability", "p"))
 
 
-def make_review_writer(version):
+def load_risk():
+    """Modelo de riesgo y su umbral (None si todavía no se entrenó: el flujo sigue sin alertas)."""
+    path = f"{MODELS}/risk_metrics.json"
+    if not os.path.exists(path):
+        print("sin modelo de riesgo (/models/risk_metrics.json): el flujo corre sin alertas", flush=True)
+        return None
+    with open(path) as fh:
+        meta = json.load(fh)
+    if meta["cutoff_t"] != CUTOFF_T:
+        raise SystemExit(f'el modelo de riesgo se entrenó con T={meta["cutoff_t"]} y el flujo usa T={CUTOFF_T}')
+    print(f'modelo de riesgo {meta["best_model"]} versión {meta["sha256"][:12]} umbral={meta["threshold"]:.3f}', flush=True)
+    return {"model": PipelineModel.load(f"{MODELS}/risk_best"), "threshold": float(meta["threshold"]),
+            "version": meta["sha256"][:12]}
+
+
+_competitors = {}   # la densidad de competidores no cambia durante el flujo: se calcula una vez por negocio
+
+
+def score_and_alert(spark, db, rows, risk, now):
+    """Actualiza las variables de los negocios del lote, los puntúa y guarda las alertas."""
+    t = datetime.fromisoformat(CUTOFF_T)
+    as_of = {}
+    for r in rows:
+        as_of[r["business_id"]] = max(as_of.get(r["business_id"], r["event_time"]), r["event_time"])
+    ids = list(as_of)
+    biz = {b["_id"]: b for b in db.businesses.find({"_id": {"$in": ids}}, {"name": 1, "main_category": 1, "location": 1, "is_open": 1})}
+    hist, live = {}, {}
+    for r in db.reviews.find({"business_id": {"$in": ids}, "date": {"$lte": t}}, {"business_id": 1, "stars": 1, "date": 1}):
+        hist.setdefault(r["business_id"], []).append((r["date"], int(r["stars"])))
+    for r in db.reviews_stream.find({"business_id": {"$in": ids}}, {"business_id": 1, "stars": 1, "date": 1}):
+        live.setdefault(r["business_id"], []).append((r["date"], int(r["stars"])))
+
+    feats = {}
+    for bid in ids:
+        if bid not in biz:
+            continue
+        if bid not in _competitors:
+            b = biz[bid]
+            _competitors[bid] = count_competitors(db, b["location"], b["main_category"], bid)
+        f = compute(hist.get(bid, []) + live.get(bid, []), as_of[bid], _competitors[bid])
+        if f:
+            feats[bid] = f
+    if not feats:
+        return 0
+    order = list(feats)
+    df = spark.createDataFrame([tuple(float(feats[b][k]) for k in FEATURES) for b in order], FEATURES)
+    probs = [float(x["p"]) for x in risk["model"].transform(df).select(vector_to_array("probability")[1].alias("p")).collect()]
+
+    score_ops, alert_ops, n_alerts = [], [], 0
+    for bid, p in zip(order, probs):
+        b, hit = biz[bid], p >= risk["threshold"]
+        n_alerts += hit
+        score_ops.append(UpdateOne({"_id": bid}, {"$set": {
+            "business_id": bid, "name": b.get("name"), "main_category": b.get("main_category"), "geometry": b["location"],
+            "probability": round(p, 4), "as_of": as_of[bid], "source": "stream", "alert": hit, "features": feats[bid],
+            "model_version": risk["version"], "updated_at": now}}, upsert=True))
+        if hit:
+            alert_ops.append(UpdateOne({"_id": bid}, {"$set": {
+                "business_id": bid, "name": b.get("name"), "main_category": b.get("main_category"), "geometry": b["location"],
+                "probability": round(p, 4), "threshold": risk["threshold"], "as_of": as_of[bid], "features": feats[bid],
+                "model_version": risk["version"], "active": True, "updated_at": now,
+                "dataset_is_open": int(b.get("is_open", 1))},   # solo para evaluar a posteriori las alertas
+                "$setOnInsert": {"created_at": now}}, upsert=True))
+        else:   # si ya tenía alerta y el puntaje bajó del umbral, deja de estar activa
+            alert_ops.append(UpdateOne({"_id": bid, "active": True}, {"$set": {
+                "active": False, "probability": round(p, 4), "as_of": as_of[bid], "updated_at": now}}))
+    db.risk_scores.bulk_write(score_ops, ordered=False)
+    db.alerts.bulk_write(alert_ops, ordered=False)
+    return n_alerts
+
+
+def make_review_writer(version, risk=None):
     def write(batch, epoch_id):
         rows = batch.collect()
         if not rows:
@@ -110,7 +187,9 @@ def make_review_writer(version):
             "processed_at": now, "batch_id": int(epoch_id), "model_version": version["sha256"][:12]}}, upsert=True)
             for r in rows]
         db.reviews_stream.bulk_write(ops, ordered=False)
-        # Entrega 2, paso 5: aquí se actualizan las variables de los negocios del lote, se puntúan y se guardan las alertas.
+        if risk:
+            n = score_and_alert(batch.sparkSession, db, rows, risk, now)
+            print(f"lote {epoch_id}: {len(rows)} reseñas, alertas nuevas o vigentes: {n}", flush=True)
     return write
 
 
@@ -194,6 +273,9 @@ def main():
     db.geo_windows.create_index([("geometry", GEOSPHERE)])
     db.geo_windows.create_index([("geohash", ASCENDING), ("window_start", ASCENDING)])
     db.reviews_stream.create_index([("business_id", ASCENDING), ("date", ASCENDING)])
+    db.alerts.create_index([("geometry", GEOSPHERE)])
+    db.alerts.create_index([("active", ASCENDING), ("probability", -1)])
+    risk = load_risk()
     businesses = (spark.read.format("mongodb").option("database", MONGO_DB).option("collection", "businesses").load()
                   .select(F.col("_id").alias("business_id"), "geohash").where(F.col("geohash").isNotNull()).cache())
     print("negocios con geohash:", businesses.count(), flush=True)
@@ -203,7 +285,7 @@ def main():
     spark.streams.addListener(LagListener(version))
     stream = scored_stream(spark, model, businesses)
 
-    (stream.writeStream.queryName("reviews").foreachBatch(make_review_writer(version))
+    (stream.writeStream.queryName("reviews").foreachBatch(make_review_writer(version, risk))
      .option("checkpointLocation", f"{CHECKPOINTS}/reviews").trigger(processingTime=TRIGGER).start())
 
     windows = (stream.where(F.col("geohash").isNotNull())

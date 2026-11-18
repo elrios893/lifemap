@@ -9,7 +9,8 @@ COPY api/app app
 FROM base AS test
 COPY tests tests
 COPY ingest/km.py ingest/km.py
-ENV PYTHONPATH=/srv:/srv/ingest
+COPY spark/risk_features.py spark/risk_features.py
+ENV PYTHONPATH=/srv:/srv/ingest:/srv/spark
 RUN pytest -q tests
 
 # /predict carga el modelo de Spark en modo local, por eso la imagen lleva JRE y PySpark.
