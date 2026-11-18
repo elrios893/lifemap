@@ -21,6 +21,10 @@ services:
       SPARK_WORKER_CORES: "2"
       SPARK_WORKER_MEMORY: "1500m"
     mem_limit: 2g
+  kafka:
+    environment:
+      KAFKA_HEAP_OPTS: -Xms192m -Xmx320m
+    mem_limit: 640m
   api:
     ports: ["5050:5000"]
   jenkins:

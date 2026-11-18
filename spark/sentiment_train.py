@@ -1,6 +1,8 @@
 """Sentimiento en Spark: limpieza -> tokenización -> stopwords (inglés) -> HashingTF/IDF -> Naive Bayes y regresión logística.
 
 Etiqueta (del enunciado): 1-2 estrellas = negativo (0), 3 = neutral (1), 4-5 = positivo (2).
+Corte temporal (Entrega 2): solo se usan las reseñas con date <= CUTOFF_T (por defecto 2021-01-19). Las posteriores se reservan:
+las publica el productor de Kafka y el modelo nunca las ve.
 Partición entrenamiento/prueba POR NEGOCIO: un mismo negocio nunca queda en los dos lados (evita fuga de información,
 porque las reseñas de un negocio se parecen entre sí).
 
@@ -8,6 +10,7 @@ Salidas (volumen /models):
   /models/sentiment_nb, /models/sentiment_lr   PipelineModel de cada clasificador
   /models/sentiment_best                        copia del mejor por F1 macro (lo que carga /predict y, en E2, el streaming)
   /models/metrics.json                          métricas por clase, matriz de confusión, distribución y tiempos
+  /models/version.json                          versión del modelo: corte T, mejor modelo y huella SHA-256 de sus archivos
 
 Uso: spark-submit --master spark://spark-master:7077 /opt/jobs/sentiment_train.py
 """
@@ -15,16 +18,20 @@ import json
 import os
 import shutil
 import time
+from datetime import datetime, timezone
 
 from pyspark.ml import Pipeline
 from pyspark.ml.classification import LogisticRegression, NaiveBayes
 from pyspark.ml.feature import HashingTF, IDF, RegexTokenizer, StopWordsRemover
 from pyspark.sql import SparkSession, functions as F
 
+from model_version import fingerprint
+
 CLEAN = os.environ.get("CLEAN_DIR", "/data/clean")
 MODELS = os.environ.get("MODELS_DIR", "/models")
 NUM_FEATURES = int(os.environ.get("NUM_FEATURES", str(2 ** 16)))
 TEST_PCT = 20
+CUTOFF_T = os.environ.get("CUTOFF_T", "2021-01-19")   # fecha de corte: entrena hasta aquí, el resto se reproduce en streaming
 LABELS = ["negative", "neutral", "positive"]
 
 
@@ -66,7 +73,12 @@ def main():
              .config("spark.sql.shuffle.partitions", "16").getOrCreate())
     spark.sparkContext.setLogLevel("WARN")
 
-    r = spark.read.parquet(f"{CLEAN}/review.parquet").select("review_id", "business_id", "stars", "text")
+    r = spark.read.parquet(f"{CLEAN}/review.parquet").select("review_id", "business_id", "stars", "text", "date")
+    n_all = r.count()
+    r = r.where(F.col("date") <= F.lit(CUTOFF_T).cast("timestamp"))   # solo el pasado de T: lo posterior se reserva
+    n_hist = r.count()
+    print("reseñas totales: %d | hasta T=%s (entrenamiento y prueba): %d | reservadas para streaming: %d"
+          % (n_all, CUTOFF_T, n_hist, n_all - n_hist))
     df = (r.withColumn("label", F.when(F.col("stars") <= 2, 0.0).when(F.col("stars") == 3, 1.0).otherwise(2.0))
            # limpieza: minúsculas, quita URLs y todo lo que no sea letra
            .withColumn("clean", F.regexp_replace(F.lower(F.col("text")), "https?://\\S+|[^a-z\\s]", " ")))
@@ -81,7 +93,8 @@ def main():
     print("train: %d reseñas | test: %d reseñas | negocios en ambos lados: %d" % (n_train, n_test, shared))
     assert shared == 0, "fuga: hay negocios en train y test"
 
-    report = {"class_distribution": dist, "train_reviews": n_train, "test_reviews": n_test,
+    report = {"cutoff_t": CUTOFF_T, "reviews_total": n_all, "reviews_until_t": n_hist,
+              "reviews_reserved_for_streaming": n_all - n_hist, "class_distribution": dist, "train_reviews": n_train, "test_reviews": n_test,
               "businesses_in_both_splits": shared, "num_features": NUM_FEATURES, "models": []}
     fitted = {}
     for name, clf in (("naive_bayes", NaiveBayes(smoothing=1.0, modelType="multinomial")),
@@ -106,6 +119,13 @@ def main():
     shutil.copytree(f"{MODELS}/sentiment_{best}", f"{MODELS}/sentiment_best")
     with open(f"{MODELS}/metrics.json", "w") as fh:
         json.dump(report, fh, ensure_ascii=False, indent=2)
+    best_m = next(m for m in report["models"] if m["model"] == best)
+    version = {"cutoff_t": CUTOFF_T, "best_model": best, "macro_f1": best_m["macro_f1"], "accuracy": best_m["accuracy"],
+               "trained_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+               "sha256": fingerprint(f"{MODELS}/sentiment_best")}
+    with open(f"{MODELS}/version.json", "w") as fh:
+        json.dump(version, fh, ensure_ascii=False, indent=2)
+    print("versión del modelo:", version["sha256"][:12], "| corte T:", CUTOFF_T)
     print("\nmejor modelo por F1 macro:", best, "-> guardado en", f"{MODELS}/sentiment_best")
     spark.stop()
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Pipeline completo de datos de la Entrega 1, sobre el sistema ya levantado (docker compose up -d).
 #   descarga Kaggle -> limpieza Dask -> carga Mongo GeoJSON -> vida de negocios
-#   -> MapReduce de tasas -> sentimiento (NB y LR) -> balanceo
+#   -> MapReduce de tasas -> sentimiento (NB y LR, hasta T) -> balanceo -> riesgo de cierre -> supervivencia (Kaplan-Meier)
 #
 # Uso:  ./scripts/run_pipeline.sh            (todo el área, p. ej. > 1.000.000 reseñas)
 #       SAMPLE_REVIEWS=200000 ./scripts/run_pipeline.sh   (muestra para desarrollo local)
@@ -10,6 +10,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 SAMPLE_REVIEWS="${SAMPLE_REVIEWS:-0}"
+CUTOFF_T="${CUTOFF_T:-2021-01-19}"   # Entrega 2: el modelo entrena hasta T; lo posterior lo reproduce Kafka
 NET="${COMPOSE_PROJECT_NAME:-lifemap}_default"
 VOL="${COMPOSE_PROJECT_NAME:-lifemap}_data"
 MONGO_PASSWORD="$(grep '^MONGO_PASSWORD=' .env | cut -d= -f2- | tr -d '\r')"
@@ -23,18 +24,21 @@ ingest() {
   docker run --rm --network "$NET" --env-file .env -v "$VOL":/data "${extra[@]}" lifemap-ingest:latest "$@"
 }
 spark_job() {
-  docker exec -e MONGO_URI="mongodb://$MONGO_USER:$MONGO_PASSWORD@mongo:27017/?authSource=admin" \
+  docker exec -e CUTOFF_T="$CUTOFF_T" -e MONGO_URI="mongodb://$MONGO_USER:$MONGO_PASSWORD@mongo:27017/?authSource=admin" \
     "$(docker compose ps -q spark-master)" /opt/spark/bin/spark-submit --master spark://spark-master:7077 \
     --driver-memory "${DRIVER_MEMORY:-1g}" --executor-memory "${EXECUTOR_MEMORY:-2500m}" \
     --conf spark.jars.ivy=/tmp/ivy "$@"
 }
 step() { echo; echo "=== $(date +%H:%M:%S) $*"; }
 
-step "1/7 Descarga de Yelp (API de Kaggle)";           ingest python download.py
-step "2/7 Limpieza con Dask (SAMPLE_REVIEWS=$SAMPLE_REVIEWS)"; ingest -e SAMPLE_REVIEWS="$SAMPLE_REVIEWS" python clean.py
-step "3/7 Carga a MongoDB (GeoJSON + 2dsphere)";        ingest python load_mongo.py
-step "4/7 Vida de los negocios (días-negocio, evento, censura)"; ingest python life.py
-step "5/7 MapReduce: tasas de cierre";                  spark_job /opt/jobs/mapreduce_closure.py
-step "6/7 Sentimiento: Naive Bayes y regresión logística"; spark_job /opt/jobs/sentiment_train.py
-step "7/7 Balanceo de carga";                           spark_job /opt/jobs/balanceo.py 5
+step "1/8 Descarga de Yelp (API de Kaggle)";           ingest python download.py
+step "2/8 Limpieza con Dask (SAMPLE_REVIEWS=$SAMPLE_REVIEWS)"; ingest -e SAMPLE_REVIEWS="$SAMPLE_REVIEWS" python clean.py
+ingest -e CUTOFF_T="$CUTOFF_T" python export_reserved.py   # reseñas posteriores a T: las reproduce el productor de Kafka
+step "3/8 Carga a MongoDB (GeoJSON + 2dsphere)";        ingest python load_mongo.py
+step "4/8 Vida de los negocios (días-negocio, evento, censura)"; ingest python life.py
+step "5/8 MapReduce: tasas de cierre";                  spark_job /opt/jobs/mapreduce_closure.py
+step "6/8 Sentimiento: Naive Bayes y regresión logística"; spark_job /opt/jobs/sentiment_train.py
+step "7/8 Balanceo de carga";                           spark_job /opt/jobs/balanceo.py 5
+step "7b/8 Modelo de riesgo de cierre (variables hasta T)"; DRIVER_MEMORY=2g spark_job /opt/jobs/risk_train.py
+step "8/8 Supervivencia: Kaplan-Meier por categoría y zona"; ingest python survival.py
 step "LISTO"

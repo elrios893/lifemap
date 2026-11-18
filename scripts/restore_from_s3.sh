@@ -25,14 +25,23 @@ for _ in $(seq 1 60); do
   sleep 5
 done
 
-echo "1/2 MongoDB <- $SRC/mongo.archive.gz"
+echo "1/3 MongoDB <- $SRC/mongo.archive.gz"
 aws s3 cp "$SRC/mongo.archive.gz" - \
   | docker compose exec -T mongo mongorestore -u "$MU" -p "$MP" --authenticationDatabase admin --archive --gzip --drop --quiet
 
-echo "2/2 Modelos y métricas <- $SRC/models.tgz"
+echo "2/3 Modelos y métricas <- $SRC/models.tgz"
 aws s3 cp "$SRC/models.tgz" - \
   | docker run -i --rm --user root -v "${PROJECT}_models":/m --entrypoint sh lifemap-spark:latest \
       -c 'tar xzf - -C /m && chown -R spark /m'
+
+echo "3/3 Reseñas reservadas (para el productor y la prueba de humo) <- $SRC/reserved_reviews.parquet"
+if aws s3 ls "$SRC/reserved_reviews.parquet" >/dev/null 2>&1; then
+  aws s3 cp "$SRC/reserved_reviews.parquet" - \
+    | docker run -i --rm --user root -v "${PROJECT}_data":/d --entrypoint sh lifemap-ingest:latest \
+        -c 'mkdir -p /d/clean && cat > /d/clean/reserved_reviews.parquet'
+else
+  echo "  (el respaldo no trae reserved_reviews.parquet: el productor no tendrá de dónde leer hasta correr export_reserved.py)"
+fi
 
 docker compose exec -T mongo mongosh -u "$MU" -p "$MP" --authenticationDatabase admin "$DB" --quiet \
   --eval 'printjson({businesses: db.businesses.countDocuments({}), reviews: db.reviews.countDocuments({}), closure_stats: db.closure_stats.countDocuments({}), indices: db.businesses.getIndexes().map(i => i.name)})'

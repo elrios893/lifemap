@@ -65,3 +65,37 @@ def parse_category(args):
     if len(c) > 80:
         raise ApiError("'category' demasiado larga")
     return c or None
+
+
+def parse_optional_point(args):
+    """Punto opcional: sin lat/lon se devuelve None (sin filtro geográfico); con solo uno de los dos, error."""
+    if args.get("lat") in (None, "") and args.get("lon") in (None, ""):
+        return None
+    return parse_point(args)
+
+
+def parse_probability(args, name="min_probability", default=0.0):
+    return _num(args, name, 0, 1, default)
+
+
+def parse_window(args):
+    """'latest' (por defecto) o la fecha de inicio de la ventana en formato AAAA-MM-DD."""
+    w = (args.get("window") or "latest").strip()
+    if w == "latest":
+        return None
+    try:
+        from datetime import datetime
+        return datetime.strptime(w, "%Y-%m-%d")
+    except ValueError:
+        raise ApiError("'window' debe ser 'latest' o una fecha AAAA-MM-DD (inicio de la ventana)") from None
+
+
+def parse_bool(args, name, default=False):
+    raw = args.get(name)
+    if raw in (None, ""):
+        return default
+    if raw.lower() in ("1", "true", "yes", "si", "sí"):
+        return True
+    if raw.lower() in ("0", "false", "no"):
+        return False
+    raise ApiError(f"'{name}' debe ser true o false")

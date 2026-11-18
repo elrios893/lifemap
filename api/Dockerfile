@@ -8,7 +8,10 @@ COPY api/app app
 # Etapa de pruebas: `docker build --target test` falla si pytest falla.
 FROM base AS test
 COPY tests tests
-ENV PYTHONPATH=/srv
+COPY ingest/km.py ingest/km.py
+COPY spark/risk_features.py spark/risk_features.py
+COPY spark/model_version.py spark/check_models.py spark/
+ENV PYTHONPATH=/srv:/srv/ingest:/srv/spark
 RUN pytest -q tests
 
 # /predict carga el modelo de Spark en modo local, por eso la imagen lleva JRE y PySpark.

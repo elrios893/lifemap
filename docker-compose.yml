@@ -1,4 +1,4 @@
-# LifeMap — Mongo + Spark + Dask + API Flask + Jenkins (+ ngrok opcional). Kafka se agrega en la Entrega 2.
+# LifeMap — Mongo + Spark + Dask + Kafka (KRaft) + API Flask + Jenkins (+ ngrok opcional).
 # Levantar: docker compose up -d --build     (copiar antes .env.example a .env)
 # Sin bind mounts de código: todo se hornea en las imágenes, así Jenkins (que corre en un contenedor)
 # puede desplegar con el socket de Docker sin problemas de rutas.
@@ -75,6 +75,76 @@ services:
     volumes: [data:/data, models:/models]
     mem_limit: 3500m
 
+  # ---------- Kafka en modo KRaft (sin ZooKeeper): un nodo que es broker y controlador a la vez ----------
+  kafka:
+    image: apache/kafka:3.8.0
+    restart: unless-stopped
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_LOG_RETENTION_HOURS: 24
+      KAFKA_HEAP_OPTS: -Xms256m -Xmx512m
+    volumes: [kafka_data:/var/lib/kafka/data]
+    mem_limit: 900m
+    healthcheck:
+      test: ["CMD", "/opt/kafka/bin/kafka-broker-api-versions.sh", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 20s
+
+  # Crea el topic `reviews` (3 particiones; los mensajes llevan clave business_id) y termina.
+  kafka-init:
+    image: apache/kafka:3.8.0
+    restart: "no"
+    depends_on:
+      kafka: {condition: service_healthy}
+    command: ["/opt/kafka/bin/kafka-topics.sh", "--bootstrap-server", "kafka:9092", "--create", "--if-not-exists",
+              "--topic", "reviews", "--partitions", "3", "--replication-factor", "1"]
+    mem_limit: 256m
+
+  # Productor con reloj acelerado (no arranca solo): docker compose run --rm producer --seconds-per-month 10
+  producer:
+    image: lifemap-ingest:latest
+    profiles: ["stream"]
+    working_dir: /app
+    entrypoint: ["python", "producer.py"]
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      CUTOFF_T: ${CUTOFF_T:-2021-01-19}
+    volumes: [data:/data]
+    depends_on:
+      kafka-init: {condition: service_completed_successfully}
+    mem_limit: 768m
+
+  # ---------- Structured Streaming: Kafka -> inferencia -> MongoDB (+ ventanas por geohash) ----------
+  # Corre en modo local (STREAM_MASTER) para no competir con los trabajos batch por el worker. Espera a que exista el modelo.
+  stream:
+    image: lifemap-spark:latest
+    restart: unless-stopped
+    environment:
+      MONGO_URI: mongodb://${MONGO_USER}:${MONGO_PASSWORD}@mongo:27017/?authSource=admin
+      MONGO_DB: ${MONGO_DB:-lifemap}
+      KAFKA_BOOTSTRAP: kafka:9092
+      CUTOFF_T: ${CUTOFF_T:-2021-01-19}
+    command: ["bash", "-c", "until [ -f /models/version.json ]; do echo 'esperando el modelo...'; sleep 5; done; exec /opt/spark/bin/spark-submit --master ${STREAM_MASTER:-local[2]} --driver-memory ${STREAM_MEMORY:-1g} --conf spark.jars.ivy=/tmp/ivy /opt/jobs/stream_reviews.py"]
+    volumes: ["models:/models:ro", "stream_ckpt:/checkpoints"]
+    depends_on:
+      kafka-init: {condition: service_completed_successfully}
+      mongo: {condition: service_healthy}
+    mem_limit: 1600m
+
   # ---------- API Flask ----------
   api:
     build:
@@ -88,6 +158,7 @@ services:
       MONGO_DB: ${MONGO_DB:-lifemap}
       SPARK_MASTER_UI: http://spark-master:8080
       DASK_SCHEDULER_UI: http://dask-scheduler:8787
+      KAFKA_BOOTSTRAP: kafka:9092
       GIT_COMMIT: ${GIT_COMMIT:-unknown}
     depends_on:
       mongo: {condition: service_healthy}
@@ -129,6 +200,8 @@ services:
       api: {condition: service_healthy}
 
 volumes:
+  stream_ckpt:
+  kafka_data:
   mongo_data:
   jenkins_home:
   data:
