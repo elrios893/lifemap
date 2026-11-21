@@ -11,6 +11,7 @@ COPY tests tests
 COPY ingest/km.py ingest/km.py
 COPY spark/risk_features.py spark/risk_features.py
 COPY spark/model_version.py spark/check_models.py spark/
+COPY controller/server.py controller/server.py
 ENV PYTHONPATH=/srv:/srv/ingest:/srv/spark
 RUN pytest -q tests
 

@@ -55,6 +55,8 @@ def create_app(mongo_client=None):
     app.register_blueprint(live_bp)
     from .routes_survival import bp as survival_bp
     app.register_blueprint(survival_bp)
+    from .routes_control import bp as control_bp
+    app.register_blueprint(control_bp)
     from .ui import ui as ui_bp
     app.register_blueprint(ui_bp)
 
