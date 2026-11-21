@@ -13,3 +13,8 @@ models/*
 tfplan
 *.tfplan
 crash.log
+
+# Power BI: configuracion local y cache de datos (el proyecto .pbip se versiona sin datos)
+dashboard/powerbi/**/.pbi/
+dashboard/powerbi/**/cache.abf
+*.pbix

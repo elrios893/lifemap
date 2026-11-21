@@ -159,3 +159,18 @@ def test_health_reports_stream_lag_without_changing_status():
     assert _app(db).get("/health").get_json()["streaming"]["status"] == "degraded"
     db.stream_status.find_one.return_value = None
     assert _app(db).get("/health").get_json()["streaming"]["status"] == "not-started"
+
+
+def test_survival_index_lists_groups_without_curves():
+    db = MagicMock()
+    db.survival.find.return_value.sort.return_value.limit.return_value = [
+        _surv(category="Restaurants", zone=None), _surv(category="Food", zone=None, status="ok")]
+    c = _app(db)
+    body = c.get("/survival?dimension=category&limit=5").get_json()
+    q = db.survival.find.call_args[0][0]
+    assert q == {"dimension": "category", "status": "ok"}
+    assert body["count"] == 2 and body["results"][0]["category"] == "Restaurants" and "curve" not in body["results"][0]
+    assert c.get("/survival?dimension=otra").status_code == 400
+    assert c.get("/survival?status=raro").status_code == 400
+    c.get("/survival?status=all")
+    assert db.survival.find.call_args[0][0] == {"dimension": "category"}

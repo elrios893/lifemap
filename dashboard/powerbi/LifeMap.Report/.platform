@@ -1,0 +1,11 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "Report",
+    "displayName": "LifeMap"
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "40964d9f-f7e7-4d07-b98c-eb8090aa2cc0"
+  }
+}
