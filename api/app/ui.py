@@ -12,6 +12,12 @@ def index():
     return send_from_directory(_STATIC, "index.html")
 
 
+@ui.get("/dashboard")
+def dashboard():
+    """Panel en vivo (HTML/JS estático): consume /health, /live/*, /alerts y /survival y se actualiza solo."""
+    return send_from_directory(_STATIC, "dashboard.html")
+
+
 @ui.get("/entregauno")
 def entregauno():
     """Marca de la Entrega 1: sirve para ver en vivo que Jenkins desplegó este cambio."""

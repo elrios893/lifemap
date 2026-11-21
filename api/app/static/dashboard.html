@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LifeMap · Panel en vivo</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/static/vendor/leaflet.css">
+<link rel="stylesheet" href="/static/dashboard.css">
+</head>
+<body>
+<header class="top">
+  <div>
+    <h1>LifeMap · Panel en vivo</h1>
+    <p>Streaming con Kafka y Spark · <a href="/">mapa de negocios</a></p>
+  </div>
+  <div class="ctl">
+    <label>Ventana <select id="win"></select></label>
+    <label class="chk"><input type="checkbox" id="auto" checked> Actualizar cada 5 s</label>
+    <span id="stamp" class="stamp">—</span>
+  </div>
+</header>
+
+<main>
+  <section class="cards" aria-label="Estado">
+    <div class="card"><span>Streaming</span><b id="k-estado">—</b></div>
+    <div class="card"><span>Retraso del consumidor</span><b id="k-lag">—</b></div>
+    <div class="card"><span>Hotspots en la ventana</span><b id="k-hot">—</b></div>
+    <div class="card"><span>Alertas vigentes</span><b id="k-alert">—</b></div>
+    <div class="card"><span>Reseñas procesadas</span><b id="k-n">—</b></div>
+  </section>
+
+  <section class="grid">
+    <article class="box map">
+      <h2>Hotspots de reseñas negativas <small id="map-note"></small></h2>
+      <div id="map"></div>
+      <div class="legend"><span><i style="background:#2a78d6"></i>% negativo bajo</span><span><i style="background:#eb6834"></i>% negativo alto</span>
+        <span><i class="ring"></i>hotspot</span><span><i class="dot"></i>alerta de cierre</span></div>
+    </article>
+
+    <article class="box">
+      <h2>% negativo y hotspots por ventana</h2>
+      <div id="trend" class="chart"></div>
+    </article>
+
+    <article class="box">
+      <h2>Supervivencia por categoría <small>Kaplan-Meier</small></h2>
+      <div id="surv-cat" class="chart"></div>
+    </article>
+
+    <article class="box">
+      <h2>Supervivencia por zona <small>Kaplan-Meier</small></h2>
+      <div id="surv-zone" class="chart"></div>
+    </article>
+
+    <article class="box wide">
+      <h2>Alertas de riesgo de cierre vigentes <small>mayor probabilidad primero</small></h2>
+      <div class="scroll"><table id="alerts"><thead><tr><th>Negocio</th><th>Categoría</th><th>Probabilidad</th><th>% neg. 6 m</th><th>Días sin reseña</th><th>Fecha</th></tr></thead><tbody></tbody></table></div>
+    </article>
+  </section>
+  <p id="err" class="err" hidden></p>
+</main>
+<script src="/static/vendor/leaflet.js"></script>
+<script src="/static/dashboard.js"></script>
+</body>
+</html>

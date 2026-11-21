@@ -15,3 +15,11 @@ def test_entregauno():
     c = create_app(mongo_client=MagicMock()).test_client()
     r = c.get("/entregauno")
     assert r.status_code == 200 and r.get_json()["estado"] == "terminada"
+
+
+def test_dashboard_page_and_assets_are_served():
+    c = create_app(mongo_client=MagicMock()).test_client()
+    r = c.get("/dashboard")
+    assert r.status_code == 200 and b"Panel en vivo" in r.data
+    assert c.get("/static/dashboard.js").status_code == 200
+    assert c.get("/static/dashboard.css").status_code == 200
