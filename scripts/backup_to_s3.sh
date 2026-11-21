@@ -18,7 +18,8 @@ DEST="s3://$BUCKET/$PREFIX/backup"
 [ -n "$BUCKET" ] || { echo "falta S3_BUCKET en .env"; exit 1; }
 
 echo "1/5 MongoDB -> $DEST/mongo.archive.gz"
-docker compose exec -T mongo mongodump -u "$MU" -p "$MP" --authenticationDatabase admin --db "$DB" --archive --gzip --quiet \n  --excludeCollection reviews_stream --excludeCollection geo_windows --excludeCollection alerts --excludeCollection stream_status \
+docker compose exec -T mongo mongodump -u "$MU" -p "$MP" --authenticationDatabase admin --db "$DB" --archive --gzip --quiet \
+  --excludeCollection reviews_stream --excludeCollection geo_windows --excludeCollection alerts --excludeCollection stream_status \
   | aws s3 cp - "$DEST/mongo.archive.gz"
 
 echo "2/5 Modelos y métricas (volumen models) -> $DEST/models.tgz"

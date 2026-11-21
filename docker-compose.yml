@@ -138,12 +138,13 @@ services:
       MONGO_DB: ${MONGO_DB:-lifemap}
       KAFKA_BOOTSTRAP: kafka:9092
       CUTOFF_T: ${CUTOFF_T:-2021-01-19}
-    command: ["bash", "-c", "until [ -f /models/version.json ]; do echo 'esperando el modelo...'; sleep 5; done; exec /opt/spark/bin/spark-submit --master ${STREAM_MASTER:-local[2]} --driver-memory ${STREAM_MEMORY:-1g} --conf spark.jars.ivy=/tmp/ivy /opt/jobs/stream_reviews.py"]
+      MAX_OFFSETS_PER_TRIGGER: ${STREAM_BATCH:-5000}   # un mes de reseñas cada 10 s son ~700 mensajes/s: lotes de 5000 cada 5 s
+    command: ["bash", "-c", "until [ -f /models/version.json ]; do echo 'esperando el modelo...'; sleep 5; done; exec /opt/spark/bin/spark-submit --master ${STREAM_MASTER:-local[2]} --driver-memory ${STREAM_MEMORY:-1500m} --conf spark.jars.ivy=/tmp/ivy /opt/jobs/stream_reviews.py"]
     volumes: ["models:/models:ro", "stream_ckpt:/checkpoints"]
     depends_on:
       kafka-init: {condition: service_completed_successfully}
       mongo: {condition: service_healthy}
-    mem_limit: 1600m
+    mem_limit: 2400m   # con 1,5 GB de heap tocaba el límite anterior (1,6 GB) durante la reproducción completa
 
   # ---------- API Flask ----------
   api:
