@@ -1,0 +1,157 @@
+table alerts
+	lineageTag: 9d680562-a728-5dec-885b-bcba039a40a1
+
+	measure 'Alertas vigentes' = COUNTROWS(alerts)
+		formatString: 0
+		lineageTag: 6f53297c-0251-5225-b4a1-aa0301e132c7
+
+	column business_id
+		dataType: string
+		lineageTag: d887adee-1fb5-58c9-9c79-d61a2a8d2b65
+		summarizeBy: none
+		sourceColumn: business_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column name
+		dataType: string
+		lineageTag: 0a20540d-8899-52a9-a458-1e36eca8ae93
+		summarizeBy: none
+		sourceColumn: name
+
+		annotation SummarizationSetBy = Automatic
+
+	column main_category
+		dataType: string
+		lineageTag: dd1f196b-6a15-5369-a3fb-6c286f89d482
+		summarizeBy: none
+		sourceColumn: main_category
+
+		annotation SummarizationSetBy = Automatic
+
+	column probability
+		dataType: double
+		formatString: 0.00
+		lineageTag: cf12994e-19a5-5b78-85b5-76a7c2657236
+		summarizeBy: none
+		sourceColumn: probability
+
+		annotation SummarizationSetBy = Automatic
+
+	column as_of
+		dataType: dateTime
+		formatString: yyyy-mm-dd
+		lineageTag: 723eabf9-5b30-5118-ad2f-aa4e2da7341e
+		summarizeBy: none
+		sourceColumn: as_of
+
+		annotation SummarizationSetBy = Automatic
+
+	column lat
+		dataType: double
+		formatString: 0.00
+		lineageTag: 0b3a23a6-412f-5cc8-a946-7a6a65d351e4
+		summarizeBy: none
+		sourceColumn: lat
+
+		annotation SummarizationSetBy = Automatic
+
+	column lon
+		dataType: double
+		formatString: 0.00
+		lineageTag: 8919f440-e4bc-5bdb-aa39-b0e8d009a514
+		summarizeBy: none
+		sourceColumn: lon
+
+		annotation SummarizationSetBy = Automatic
+
+	column n_reviews
+		dataType: int64
+		formatString: 0
+		lineageTag: d8fbbe5d-9925-5bcc-9486-5f0c93e7bc83
+		summarizeBy: none
+		sourceColumn: n_reviews
+
+		annotation SummarizationSetBy = Automatic
+
+	column avg_stars
+		dataType: double
+		formatString: 0.00
+		lineageTag: 6f75bb86-d820-58db-9e5f-144dd19fd49c
+		summarizeBy: none
+		sourceColumn: avg_stars
+
+		annotation SummarizationSetBy = Automatic
+
+	column pct_neg_6m
+		dataType: double
+		formatString: 0.00
+		lineageTag: 9910dfb6-0635-514d-b6e8-e78eb2de858d
+		summarizeBy: none
+		sourceColumn: pct_neg_6m
+
+		annotation SummarizationSetBy = Automatic
+
+	column trend_neg
+		dataType: double
+		formatString: 0.00
+		lineageTag: a6a5a903-336d-5de0-b1b4-4ded587e9a01
+		summarizeBy: none
+		sourceColumn: trend_neg
+
+		annotation SummarizationSetBy = Automatic
+
+	column n_reviews_6m
+		dataType: int64
+		formatString: 0
+		lineageTag: d663f552-b8ef-50cc-a09b-fec0943e038b
+		summarizeBy: none
+		sourceColumn: n_reviews_6m
+
+		annotation SummarizationSetBy = Automatic
+
+	column days_since_last
+		dataType: int64
+		formatString: 0
+		lineageTag: 96dbcf62-1a4d-5f05-8bc9-57e3234992bc
+		summarizeBy: none
+		sourceColumn: days_since_last
+
+		annotation SummarizationSetBy = Automatic
+
+	column competitors_500m
+		dataType: int64
+		formatString: 0
+		lineageTag: 5f4084e0-7b8f-5b71-b215-f2e0c5faebc3
+		summarizeBy: none
+		sourceColumn: competitors_500m
+
+		annotation SummarizationSetBy = Automatic
+
+	partition alerts = m
+		mode: import
+		source =
+				let
+				    r = Json.Document(Web.Contents(ApiUrl, [RelativePath = "alerts", Query = [limit = "500"]])),
+				    Filas = List.Transform(r[results], each [
+				        business_id = _[business_id],
+				        name = _[name],
+				        main_category = _[main_category],
+				        probability = _[probability],
+				        as_of = DateTime.FromText(Text.Start(_[as_of], 19)),
+				        lat = _[lat],
+				        lon = _[lon],
+				        n_reviews = _[features][n_reviews],
+				        avg_stars = _[features][avg_stars],
+				        pct_neg_6m = _[features][pct_neg_6m],
+				        trend_neg = _[features][trend_neg],
+				        n_reviews_6m = _[features][n_reviews_6m],
+				        days_since_last = _[features][days_since_last],
+				        competitors_500m = _[features][competitors_500m]
+				    ]),
+				    Tabla = Table.FromRecords(Filas, type table [business_id = text, name = nullable text, main_category = nullable text, probability = number, as_of = datetime, lat = number, lon = number, n_reviews = Int64.Type, avg_stars = number, pct_neg_6m = number, trend_neg = number, n_reviews_6m = Int64.Type, days_since_last = Int64.Type, competitors_500m = Int64.Type])
+				in
+				    Tabla
+
+	annotation PBI_ResultType = Table
+

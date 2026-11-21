@@ -2,7 +2,7 @@
 from flask import Blueprint, current_app, jsonify, request
 
 from .routes_live import clean
-from .validation import ApiError
+from .validation import ApiError, parse_limit
 
 bp = Blueprint("survival", __name__)
 
@@ -22,6 +22,21 @@ def _summary(d):
 def _not_found(db, what, field, dimension):
     options = sorted(x[field] for x in db.survival.find({"dimension": dimension, "status": "ok"}, {field: 1}))[:30]
     raise ApiError(f"no hay curva para {what}; con curva disponible: {options}", 404)
+
+
+@bp.get("/survival")
+def survival_index():
+    """Lista los grupos con su resumen (sin curvas) para saber cuáles consultar: ?dimension=category|zone|category_zone,
+    ?status=ok|insufficient|all (por defecto solo los que tienen curva), de mayor a menor número de negocios."""
+    dimension, status = request.args.get("dimension", "category"), request.args.get("status", "ok")
+    if dimension not in ("category", "zone", "category_zone"):
+        raise ApiError("'dimension' debe ser 'category', 'zone' o 'category_zone'")
+    if status not in ("ok", "insufficient", "all"):
+        raise ApiError("'status' debe ser 'ok', 'insufficient' o 'all'")
+    q = {"dimension": dimension} | ({} if status == "all" else {"status": status})
+    docs = list(_db().survival.find(q).sort("n", -1).limit(parse_limit(request.args, default=50)))
+    return jsonify(dimension=dimension, status=status, count=len(docs), note=_NOTE,
+                   results=[clean({"category": d.get("category"), "zone": d.get("zone")} | _summary(d)) for d in docs])
 
 
 @bp.get("/survival/<path:category>")

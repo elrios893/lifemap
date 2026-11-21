@@ -1,0 +1,5 @@
+expression ApiUrl = "http://localhost:5050" meta [IsParameterQuery=true, Type="Text", IsParameterQueryRequired=true]
+	lineageTag: 05f70910-f2d0-5470-84fb-6ff46dd9d6a2
+
+	annotation PBI_ResultType = Text
+

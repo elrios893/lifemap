@@ -1,0 +1,108 @@
+table health
+	lineageTag: 9f44301d-2952-58ee-b463-c20feb42c04b
+
+	measure 'Retraso del consumidor' = MAX(health[consumer_lag])
+		formatString: #,0
+		lineageTag: f96073ab-7d14-5163-843d-710777c450a8
+
+	measure 'Estado del streaming' = SELECTEDVALUE(health[streaming_status], "sin datos")
+		lineageTag: be3ffa08-d586-5988-8a17-7ca3688aa8ba
+
+	column status
+		dataType: string
+		lineageTag: 75221ab4-e5f1-5bd6-a553-53d26ce62d11
+		summarizeBy: none
+		sourceColumn: status
+
+		annotation SummarizationSetBy = Automatic
+
+	column kafka
+		dataType: string
+		lineageTag: 0f173c2c-a459-50d1-af2d-ecf042eb06cb
+		summarizeBy: none
+		sourceColumn: kafka
+
+		annotation SummarizationSetBy = Automatic
+
+	column mongo
+		dataType: string
+		lineageTag: 4c9f94e8-5bb9-5a80-8b7c-72e4e5cd5e1e
+		summarizeBy: none
+		sourceColumn: mongo
+
+		annotation SummarizationSetBy = Automatic
+
+	column streaming_status
+		dataType: string
+		lineageTag: 749d0607-2148-56e3-9c6e-44edb83bd819
+		summarizeBy: none
+		sourceColumn: streaming_status
+
+		annotation SummarizationSetBy = Automatic
+
+	column consumer_lag
+		dataType: int64
+		formatString: 0
+		lineageTag: 7261607f-b41a-5bfa-ae11-dd41af7bbdbc
+		summarizeBy: sum
+		sourceColumn: consumer_lag
+
+		annotation SummarizationSetBy = Automatic
+
+	column last_batch
+		dataType: int64
+		formatString: 0
+		lineageTag: 1b3d34ab-4550-589c-9223-3d72a601067a
+		summarizeBy: none
+		sourceColumn: last_batch
+
+		annotation SummarizationSetBy = Automatic
+
+	column seconds_since_heartbeat
+		dataType: int64
+		formatString: 0
+		lineageTag: 4b5bc951-1128-5ab6-b33c-b9140dc19421
+		summarizeBy: sum
+		sourceColumn: seconds_since_heartbeat
+
+		annotation SummarizationSetBy = Automatic
+
+	column model_version
+		dataType: string
+		lineageTag: 1aae6be2-d95a-5482-84dd-0f6cda6ad5a1
+		summarizeBy: none
+		sourceColumn: model_version
+
+		annotation SummarizationSetBy = Automatic
+
+	column commit
+		dataType: string
+		lineageTag: 57d38dad-15d7-5eae-9869-2280923f906f
+		summarizeBy: none
+		sourceColumn: commit
+
+		annotation SummarizationSetBy = Automatic
+
+	partition health = m
+		mode: import
+		source =
+				let
+				    r = Json.Document(Web.Contents(ApiUrl, [RelativePath = "health", ManualStatusHandling = {503}])),
+				    s = r[streaming],
+				    Fila = [
+				        status = r[status],
+				        kafka = r[services][kafka],
+				        mongo = r[services][mongo],
+				        streaming_status = s[status],
+				        consumer_lag = Record.FieldOrDefault(s, "consumer_lag", null),
+				        last_batch = Record.FieldOrDefault(s, "last_batch", null),
+				        seconds_since_heartbeat = Record.FieldOrDefault(s, "seconds_since_heartbeat", null),
+				        model_version = Record.FieldOrDefault(s, "model_version", null),
+				        commit = r[commit]
+				    ],
+				    Tabla = Table.FromRecords({Fila}, type table [status = text, kafka = text, mongo = text, streaming_status = text, consumer_lag = nullable Int64.Type, last_batch = nullable Int64.Type, seconds_since_heartbeat = nullable Int64.Type, model_version = nullable text, commit = text])
+				in
+				    Tabla
+
+	annotation PBI_ResultType = Table
+

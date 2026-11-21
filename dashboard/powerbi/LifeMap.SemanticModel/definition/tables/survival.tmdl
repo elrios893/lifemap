@@ -1,0 +1,104 @@
+table survival
+	lineageTag: 9df37d19-0846-5268-8b6f-6f53186f416b
+
+	column grupo
+		dataType: string
+		lineageTag: fb6647db-8dad-52a5-b731-bbc4a642a49b
+		summarizeBy: none
+		sourceColumn: grupo
+
+		annotation SummarizationSetBy = Automatic
+
+	column tipo
+		dataType: string
+		lineageTag: 90438549-316d-5d4e-ad49-3f4e1cc21b5a
+		summarizeBy: none
+		sourceColumn: tipo
+
+		annotation SummarizationSetBy = Automatic
+
+	column years
+		dataType: double
+		formatString: 0.00
+		lineageTag: 40498fb6-aee1-5ecf-834b-dde93fad835f
+		summarizeBy: none
+		sourceColumn: years
+
+		annotation SummarizationSetBy = Automatic
+
+	column t_days
+		dataType: int64
+		formatString: 0
+		lineageTag: 5cb87339-7490-5651-8707-dd783d52b058
+		summarizeBy: none
+		sourceColumn: t_days
+
+		annotation SummarizationSetBy = Automatic
+
+	column s
+		dataType: double
+		formatString: 0.00
+		lineageTag: 931c70b0-79ad-54d6-b2ad-1fe92ad8c7b6
+		summarizeBy: none
+		sourceColumn: s
+
+		annotation SummarizationSetBy = Automatic
+
+	column lo
+		dataType: double
+		formatString: 0.00
+		lineageTag: 41f3ccf5-17b4-54e3-b004-b813834d8763
+		summarizeBy: none
+		sourceColumn: lo
+
+		annotation SummarizationSetBy = Automatic
+
+	column hi
+		dataType: double
+		formatString: 0.00
+		lineageTag: b12a39a8-3ef1-5960-852f-2c509d879c52
+		summarizeBy: none
+		sourceColumn: hi
+
+		annotation SummarizationSetBy = Automatic
+
+	column at_risk
+		dataType: int64
+		formatString: 0
+		lineageTag: 4c1ca60c-9b75-57ef-a3f5-1f598c79c9f1
+		summarizeBy: sum
+		sourceColumn: at_risk
+
+		annotation SummarizationSetBy = Automatic
+
+	partition survival = m
+		mode: import
+		source =
+				let
+				    Grupos = (dim as text, etiqueta as text, ruta as text) as list =>
+				        let
+				            idx = Json.Document(Web.Contents(ApiUrl, [RelativePath = "survival", Query = [dimension = dim, status = "ok", limit = "8"]])),
+				            nombres = List.Transform(idx[results], each if dim = "zone" then _[zone] else _[category]),
+				            curva = (g as text) as list =>
+				                let
+				                    r = Json.Document(Web.Contents(ApiUrl, [RelativePath = ruta & Uri.EscapeDataString(g)]))
+				                in
+				                    List.Transform(r[curve], each [
+				                        grupo = g,
+				                        tipo = etiqueta,
+				                        years = _[t] / 365,
+				                        t_days = _[t],
+				                        s = _[s],
+				                        lo = _[lo],
+				                        hi = _[hi],
+				                        at_risk = _[at_risk]
+				                    ])
+				        in
+				            List.Combine(List.Transform(nombres, curva)),
+				    Filas = List.Combine({Grupos("category", "Categoría", "survival/"), Grupos("zone", "Zona", "survival/zone/")}),
+				    Tabla = Table.FromRecords(Filas, type table [grupo = text, tipo = text, years = number, t_days = Int64.Type, s = number, lo = number, hi = number, at_risk = Int64.Type])
+				in
+				    Tabla
+
+	annotation PBI_ResultType = Table
+

@@ -1,0 +1,142 @@
+table hotspots
+	lineageTag: 31d2b04c-1320-5624-986f-47569bf4c1ac
+
+	measure 'Hotspots (celdas)' = CALCULATE(COUNTROWS(hotspots), hotspots[hotspot] = TRUE())
+		formatString: 0
+		lineageTag: fa5c4f43-ef53-5367-9340-0cdc1201dac3
+
+	column geohash
+		dataType: string
+		lineageTag: c0879d32-1ed8-57b0-a6f6-2a648f2e7fa4
+		summarizeBy: none
+		sourceColumn: geohash
+
+		annotation SummarizationSetBy = Automatic
+
+	column ventana
+		dataType: string
+		lineageTag: 2602cdf7-5216-5155-b143-9c3b6e571597
+		summarizeBy: none
+		sourceColumn: ventana
+
+		annotation SummarizationSetBy = Automatic
+
+	column window_start
+		dataType: dateTime
+		formatString: yyyy-mm-dd
+		lineageTag: a2f1679c-bda8-5a99-b956-207ff17977a3
+		summarizeBy: none
+		sourceColumn: window_start
+
+		annotation SummarizationSetBy = Automatic
+
+	column n
+		dataType: int64
+		formatString: 0
+		lineageTag: 0c44032a-3d10-56a9-8bbc-403000400096
+		summarizeBy: sum
+		sourceColumn: n
+
+		annotation SummarizationSetBy = Automatic
+
+	column negatives
+		dataType: int64
+		formatString: 0
+		lineageTag: 7b4e1a6a-97dc-5a28-b546-518df027aede
+		summarizeBy: sum
+		sourceColumn: negatives
+
+		annotation SummarizationSetBy = Automatic
+
+	column pct_negative
+		dataType: double
+		formatString: 0.00
+		lineageTag: 45442cfb-ec04-5083-8d7f-902376192059
+		summarizeBy: none
+		sourceColumn: pct_negative
+
+		annotation SummarizationSetBy = Automatic
+
+	column prev_pct_negative
+		dataType: double
+		formatString: 0.00
+		lineageTag: 68718d11-51cc-5b2e-b128-e143e9cbacdb
+		summarizeBy: none
+		sourceColumn: prev_pct_negative
+
+		annotation SummarizationSetBy = Automatic
+
+	column delta_pp
+		dataType: double
+		formatString: 0.00
+		lineageTag: 4fd86de0-b931-5c6b-87e3-7524962f23d3
+		summarizeBy: none
+		sourceColumn: delta_pp
+
+		annotation SummarizationSetBy = Automatic
+
+	column hotspot
+		dataType: boolean
+		lineageTag: 21eaece6-90ad-5e9f-8d5c-d13c313a6f11
+		summarizeBy: none
+		sourceColumn: hotspot
+
+		annotation SummarizationSetBy = Automatic
+
+	column estado
+		dataType: string
+		lineageTag: 9b78a717-4434-537f-becb-100211a21019
+		summarizeBy: none
+		sourceColumn: estado
+
+		annotation SummarizationSetBy = Automatic
+
+	column lat
+		dataType: double
+		formatString: 0.00
+		lineageTag: 3455fc36-5459-5bca-9b6e-50dd6c052ed4
+		summarizeBy: none
+		sourceColumn: lat
+
+		annotation SummarizationSetBy = Automatic
+
+	column lon
+		dataType: double
+		formatString: 0.00
+		lineageTag: c998bd8f-1b6d-5747-8bec-7a71c9808939
+		summarizeBy: none
+		sourceColumn: lon
+
+		annotation SummarizationSetBy = Automatic
+
+	partition hotspots = m
+		mode: import
+		source =
+				let
+				    Tendencia = Json.Document(Web.Contents(ApiUrl, [RelativePath = "live/trend"])),
+				    Ventanas = List.Transform(Tendencia[results], each Text.Start(_[window_start], 10)),
+				    Cargar = (w as text) as list =>
+				        let
+				            r = Json.Document(Web.Contents(ApiUrl, [RelativePath = "live/hotspots", Query = [window = w, limit = "500"]]))
+				        in
+				            List.Transform(r[results], each [
+				                geohash = _[geohash],
+				                ventana = w,
+				                window_start = DateTime.FromText(w & "T00:00:00"),
+				                n = _[n],
+				                negatives = _[negatives],
+				                pct_negative = _[pct_negative],
+				                prev_pct_negative = _[prev_pct_negative],
+				                delta_pp = _[delta_pp],
+				                hotspot = _[hotspot],
+				                estado = if _[hotspot] then "Hotspot" else "Normal",
+				                lat = _[lat],
+				                lon = _[lon]
+				            ]),
+				    Filas = List.Combine(List.Transform(Ventanas, Cargar)),
+				    Tabla = Table.FromRecords(Filas, type table [geohash = text, ventana = text, window_start = datetime, n = Int64.Type, negatives = Int64.Type, pct_negative = number, prev_pct_negative = nullable number, delta_pp = nullable number, hotspot = logical, estado = text, lat = number, lon = number])
+				in
+				    Tabla
+
+	annotation PBI_ResultType = Table
+

@@ -1,0 +1,85 @@
+table trend
+	lineageTag: 4d0cf0f2-de77-5069-862b-891dfb26ab22
+
+	column window_start
+		dataType: dateTime
+		formatString: yyyy-mm-dd
+		lineageTag: 88a5e0d6-d565-54f3-befa-a59210357715
+		summarizeBy: none
+		sourceColumn: window_start
+
+		annotation SummarizationSetBy = Automatic
+
+	column ventana
+		dataType: string
+		lineageTag: 33fe3868-830f-5025-90f8-3d2d7baf47bd
+		summarizeBy: none
+		sourceColumn: ventana
+
+		annotation SummarizationSetBy = Automatic
+
+	column n
+		dataType: int64
+		formatString: 0
+		lineageTag: 8944c1d1-d888-5992-aecf-4d42f72f00a6
+		summarizeBy: sum
+		sourceColumn: n
+
+		annotation SummarizationSetBy = Automatic
+
+	column negatives
+		dataType: int64
+		formatString: 0
+		lineageTag: d36e7430-527f-51bd-9744-6679fa299e8d
+		summarizeBy: sum
+		sourceColumn: negatives
+
+		annotation SummarizationSetBy = Automatic
+
+	column pct_negative
+		dataType: double
+		formatString: 0.00
+		lineageTag: 2577c1e9-aadf-5787-bf50-78dbde21768f
+		summarizeBy: none
+		sourceColumn: pct_negative
+
+		annotation SummarizationSetBy = Automatic
+
+	column cells
+		dataType: int64
+		formatString: 0
+		lineageTag: 8bd1a2db-13be-57bb-839e-ff572e7d8598
+		summarizeBy: sum
+		sourceColumn: cells
+
+		annotation SummarizationSetBy = Automatic
+
+	column hotspots
+		dataType: int64
+		formatString: 0
+		lineageTag: bc6d5a45-f9f1-543e-b3be-b5b2db347181
+		summarizeBy: sum
+		sourceColumn: hotspots
+
+		annotation SummarizationSetBy = Automatic
+
+	partition trend = m
+		mode: import
+		source =
+				let
+				    r = Json.Document(Web.Contents(ApiUrl, [RelativePath = "live/trend"])),
+				    Filas = List.Transform(r[results], each [
+				        window_start = DateTime.FromText(Text.Start(_[window_start], 19)),
+				        ventana = Text.Start(_[window_start], 10),
+				        n = _[n],
+				        negatives = _[negatives],
+				        pct_negative = _[pct_negative],
+				        cells = _[cells],
+				        hotspots = _[hotspots]
+				    ]),
+				    Tabla = Table.FromRecords(Filas, type table [window_start = datetime, ventana = text, n = Int64.Type, negatives = Int64.Type, pct_negative = nullable number, cells = Int64.Type, hotspots = Int64.Type])
+				in
+				    Tabla
+
+	annotation PBI_ResultType = Table
+
