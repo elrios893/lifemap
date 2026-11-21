@@ -155,12 +155,33 @@ async function actualizar() {
       graficaSupervivencia("surv-cat", cat); graficaSupervivencia("surv-zone", zona);
       supervivenciaCargada = true;
     }
+    estadoReproduccion();
     $("err").hidden = true;
     $("stamp").textContent = "actualizado " + new Date().toLocaleTimeString("es-CO");
   } catch (e) {
     $("err").hidden = false; $("err").textContent = "No se pudo actualizar: " + e.message;
   }
 }
+
+/* ---------- botón: reproducir el flujo ---------- */
+const FASES = { idle: "listo para reproducir", reiniciando: "reiniciando el flujo (vaciando topic, checkpoint y colecciones)…", publicando: "publicando reseñas en Kafka…", terminado: "reproducción terminada", error: "error" };
+async function estadoReproduccion() {
+  try {
+    const r = await fetch("/replay"), d = await r.json();
+    const activo = d.phase === "reiniciando" || d.phase === "publicando";
+    $("replay-go").disabled = activo;
+    $("replay-state").className = "rstate" + (d.phase === "error" || !r.ok ? " bad" : "");
+    $("replay-state").textContent = !r.ok ? (d.error || "controlador no disponible") :
+      (FASES[d.phase] || d.phase) + (d.elapsed_s != null ? ` · ${d.elapsed_s} s` : "") + (d.phase === "error" ? ": " + d.error : "");
+  } catch (e) { $("replay-state").textContent = "sin conexión con la API"; }
+}
+$("replay-go").addEventListener("click", async () => {
+  $("replay-go").disabled = true;
+  const r = await fetch("/replay", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ seconds_per_month: Number($("replay-speed").value) }) });
+  if (!r.ok) { const d = await r.json().catch(() => ({})); $("replay-state").className = "rstate bad"; $("replay-state").textContent = d.error || "no se pudo iniciar"; $("replay-go").disabled = false; return; }
+  ventanaElegida = null; encuadrado = false;   // al terminar el reinicio, seguir la ventana más reciente
+  estadoReproduccion(); actualizar();
+});
 
 $("win").addEventListener("change", () => { ventanaElegida = $("win").value; actualizar(); });
 let reloj = null;

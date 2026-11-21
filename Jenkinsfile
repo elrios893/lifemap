@@ -35,7 +35,7 @@ pipeline {
         stage('Build imágenes') {
             steps {
                 withCredentials([file(credentialsId: 'lifemap-env', variable: 'ENV_FILE')]) {
-                    sh 'GIT_COMMIT=$GIT_COMMIT_SHORT docker compose --env-file "$ENV_FILE" build api dask-scheduler spark-master'
+                    sh 'GIT_COMMIT=$GIT_COMMIT_SHORT docker compose --env-file "$ENV_FILE" build api dask-scheduler spark-master controller'
                 }
             }
         }
@@ -61,7 +61,7 @@ pipeline {
             when { expression { env.GIT_BRANCH in ['origin/main', 'main'] } }
             steps {
                 withCredentials([file(credentialsId: 'lifemap-env', variable: 'ENV_FILE')]) {
-                    sh 'GIT_COMMIT=$GIT_COMMIT_SHORT docker compose --env-file "$ENV_FILE" up -d --remove-orphans api mongo dask-scheduler dask-worker-1 dask-worker-2 spark-master spark-worker kafka kafka-init stream'
+                    sh 'GIT_COMMIT=$GIT_COMMIT_SHORT docker compose --env-file "$ENV_FILE" up -d --remove-orphans api mongo dask-scheduler dask-worker-1 dask-worker-2 spark-master spark-worker kafka kafka-init stream controller'
                 }
             }
         }

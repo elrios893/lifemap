@@ -161,6 +161,7 @@ services:
       DASK_SCHEDULER_UI: http://dask-scheduler:8787
       KAFKA_BOOTSTRAP: kafka:9092
       GIT_COMMIT: ${GIT_COMMIT:-unknown}
+      CONTROLLER_URL: http://controller:8000
     depends_on:
       mongo: {condition: service_healthy}
     volumes: ["models:/models:ro"]
@@ -172,6 +173,20 @@ services:
       timeout: 5s
       retries: 10
       start_period: 20s
+
+  # ---------- Controlador de la demostración: ejecuta bajo demanda (botón del panel) el reinicio del flujo y el productor ----------
+  # Usa el socket de Docker y el repo montado en la MISMA ruta del host (REPO_DIR), para que `docker compose` encuentre el proyecto.
+  controller:
+    build: ./controller
+    image: lifemap-controller:latest
+    restart: unless-stopped
+    working_dir: ${REPO_DIR:-/opt/lifemap}
+    environment:
+      REPO_DIR: ${REPO_DIR:-/opt/lifemap}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${REPO_DIR:-/opt/lifemap}:${REPO_DIR:-/opt/lifemap}
+    mem_limit: 128m
 
   # ---------- Jenkins (CI/CD) ----------
   jenkins:

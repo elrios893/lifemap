@@ -22,6 +22,18 @@
 </header>
 
 <main>
+  <section class="replay" aria-label="Reproducir el flujo">
+    <button id="replay-go" type="button">▶ Reproducir flujo</button>
+    <label>Velocidad
+      <select id="replay-speed">
+        <option value="3">rápida · 3 s por mes (≈ 40 s)</option>
+        <option value="10" selected>normal · 10 s por mes (≈ 2 min)</option>
+        <option value="30">lenta · 30 s por mes (≈ 6 min)</option>
+      </select>
+    </label>
+    <span id="replay-state" class="rstate">listo para reproducir</span>
+  </section>
+
   <section class="cards" aria-label="Estado">
     <div class="card"><span>Streaming</span><b id="k-estado">—</b></div>
     <div class="card"><span>Retraso del consumidor</span><b id="k-lag">—</b></div>
